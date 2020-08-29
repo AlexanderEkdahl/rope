@@ -170,7 +170,11 @@ func (s *Sdist) Install(ctx context.Context) error {
 }
 
 func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
-	path := fmt.Sprintf("./ropedir/cache/%s", s.filename)
+	cache, err := GetCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(cache, s.filename)
 
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {

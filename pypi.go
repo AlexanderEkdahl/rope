@@ -28,8 +28,13 @@ func (p *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 
 	// Search the local cache if the version is specified
 	if v.NE(semver.Version{}) {
+		cache, err := GetCacheDir()
+		if err != nil {
+			return nil, err
+		}
+
 		// TODO: Cache must be keyed on the package index or it risks getting the wrong package
-		matches, err := filepath.Glob(fmt.Sprintf("./ropedir/cache/%s-%s*", name, v))
+		matches, err := filepath.Glob(filepath.Join(cache, fmt.Sprintf("%s-%s*", name, v)))
 		if err != nil {
 			return nil, err
 		}

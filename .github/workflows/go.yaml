@@ -29,6 +29,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v1
     - name: Build Docker image
-      run: docker build -t rope_integration -f Dockerfile-integration .
+      run: docker build -t integration -f Dockerfile-integration .
     - name: Run
-      run: docker run rope_integration -test.v
+      run: docker run integration -test.v

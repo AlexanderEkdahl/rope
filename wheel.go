@@ -180,8 +180,12 @@ func (p *Wheel) Install(ctx context.Context) error {
 		return err
 	}
 
-	cachePath := fmt.Sprintf("./ropedir/cache/%s", p.filename)
-	return ExtractWheel(cachePath)
+	cache, err := GetCacheDir()
+	if err != nil {
+		return err
+	}
+
+	return ExtractWheel(filepath.Join(cache, p.filename))
 }
 
 func ExtractWheel(path string) error {
@@ -247,12 +251,14 @@ func ExtractWheel(path string) error {
 
 // download fetches the package if not in cache.
 func (p *Wheel) download(ctx context.Context) error {
-	// TODO: resolve ropedir
-	path := fmt.Sprintf("./ropedir/cache/%s", p.filename)
+	cache, err := GetCacheDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(cache, p.filename)
 
 	// Check that it is the correct file?
-	_, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		// download file
 	} else if err != nil {
 		return err
@@ -301,7 +307,12 @@ func (p *Wheel) extractDependencies(ctx context.Context) error {
 		return err
 	}
 
-	path := fmt.Sprintf("./ropedir/cache/%s", p.filename)
+	cache, err := GetCacheDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(cache, p.filename)
+
 	// TODO: Verify files as they are being read
 	whlFile, err := zip.OpenReader(path)
 	if err != nil {
