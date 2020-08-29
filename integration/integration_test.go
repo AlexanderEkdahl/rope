@@ -91,6 +91,19 @@ func TestCLI(t *testing.T) {
 			verification: `import tensorflow`,
 			slow:         true,
 		},
+		"install urllib3 and botocore": {
+			steps: []step{
+				{
+					args:             []string{"init"},
+					expectedExitCode: 0,
+				},
+				{
+					args:             []string{"install", "urllib3", "botocore"},
+					expectedExitCode: 0,
+				},
+			},
+			verification: `import urllib3; import botocore`,
+		},
 	}
 	for name, tC := range testCases {
 		t.Run(name, func(t *testing.T) {

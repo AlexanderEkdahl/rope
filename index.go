@@ -16,14 +16,14 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-// PyPi is an abstraction over interacting with the Python Package Index.
-// Check if PEP503 is the relevant PEP for this?
-// TODO: Rename to Index?
-type PyPI struct {
+// Index is an abstraction over interacting with a Python package repository
+// such as the Python Package Index.
+// The "API" is defined at: https://www.python.org/dev/peps/pep-0503/
+type Index struct {
 	url string
 }
 
-func (p *PyPI) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
+func (i *Index) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
 	var foundPackage Package
 
 	// Search the local cache if the version is specified
@@ -68,7 +68,7 @@ func (p *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 	}
 
 	if foundPackage == nil {
-		r, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", p.url, name), nil)
+		r, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", i.url, name), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +98,7 @@ func (p *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 					}
 				}
 
-				p, ok := p.checkCompatability(href)
+				p, ok := i.checkCompatability(href)
 				if ok {
 					// If no version is specified find the latest compatible version
 					if v.EQ(semver.Version{}) {
@@ -119,7 +119,7 @@ func (p *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 	}
 
 	if foundPackage == nil {
-		return nil, fmt.Errorf("package %q not found in %q", name, fmt.Sprintf("%s/%s", p.url, name))
+		return nil, fmt.Errorf("package %q not found in %q", name, fmt.Sprintf("%s/%s", i.url, name))
 	}
 
 	if wheel, ok := foundPackage.(*Wheel); ok {
@@ -131,7 +131,7 @@ func (p *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 	return foundPackage, nil
 }
 
-func (p *PyPI) checkCompatability(href string) (Package, bool) {
+func (i *Index) checkCompatability(href string) (Package, bool) {
 	url, err := url.Parse(href)
 	if err != nil {
 		return nil, false

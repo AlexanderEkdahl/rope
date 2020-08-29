@@ -83,3 +83,4 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Integration tests against top-N python packages.
 - Support specified Python version
 - Use https://warehouse.pypa.io/api-reference/json/ for faster dependency search
+- GitHub Actions release process

@@ -47,7 +47,7 @@ func install(timeout time.Duration, packages []string) error {
 		})
 	}
 
-	index := &PyPI{
+	index := &Index{
 		url: "https://pypi.python.org/simple",
 	}
 

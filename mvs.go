@@ -9,7 +9,6 @@ import (
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
-// TODO: Upgrade type to include name and version
 var PackageNotFoundErr = errors.New("package not found")
 
 type Package interface {
