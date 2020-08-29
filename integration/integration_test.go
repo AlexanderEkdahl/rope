@@ -126,7 +126,7 @@ func TestCLI(t *testing.T) {
 				}
 			}
 
-			if tC.verification != "" {
+			if !t.Failed() && tC.verification != "" {
 				cmd := exec.CommandContext(ctx, "rope", "run", "python", "-c", tC.verification)
 				cmd.Dir = tmp
 				output, err := cmd.CombinedOutput()

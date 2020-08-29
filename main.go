@@ -68,7 +68,7 @@ func run(args []string) (int, error) {
 		fmt.Printf(defaultHelp)
 		return 2, nil
 	case "version", "--version":
-		fmt.Printf("rope version: 0.1.0") // TODO: Inject version
+		fmt.Printf("rope version: 0.1.0\n") // TODO: Inject version
 		return 0, nil
 	case "init":
 		if path, err := FindRopefile(); err == ErrRopefileNotFound {

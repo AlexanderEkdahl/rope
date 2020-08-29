@@ -26,6 +26,28 @@ The following dependencies are statically included in the resulting binary and d
 - `github.com/spf13/pflag`: Drop-in replacement of the built-in flag package implementing POSIX/GNU-style --flags familiar to Python users.
 - `github.com/blang/semver/v4`: Library for parsing [semver](https://semver.org). Mostly compatible with the versioning patterns in Python. PEP 440 compatible version parsing is still and outstanding task.
 
+## Development setup
+
+### Building from source
+
+`rope` is written in Go as it easy to write performant CLI applications with very low resource requirements. Building `rope` from source therefore requires installing [Go 1.15](https://golang.org/dl/).
+
+Assuming Go is correctly installed and configured:
+
+``` sh
+go install
+rope version
+```
+
+### Running integration tests
+
+The integration tests for rope runs the binary in a Python docker image verifying the installed dependencies work correctly.
+
+```
+docker build -t rope_integration -f Dockerfile-integration . && docker run --rm rope_integration:latest -test.v
+```
+
+
 ## Links
 
 - https://classic.yarnpkg.com/blog/2017/07/11/lets-dev-a-package-manager/

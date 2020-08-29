@@ -75,3 +75,12 @@ func FindRopefile() (string, error) {
 		return path, nil
 	}
 }
+
+func GetCacheDir() (string, error) {
+	// Use os.CacheDir thing or tmp if caching is disabled
+	if err := os.MkdirAll("./ropedir/cache", 0777); err != nil {
+		return "", fmt.Errorf("failed to created cache directory: %w", err)
+	}
+
+	return "./ropedir/cache", nil
+}
