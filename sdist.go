@@ -73,10 +73,14 @@ const setuptoolsShim = `import sys, setuptools, tokenize; sys.argv[0] = 'setup.p
 // run a shim around setuptools to create a Python wheel package. If successful
 // the wheel is then installed.
 func (s *Sdist) Install(ctx context.Context) error {
+	// Check if there is already a built source distribution available.
+	cachedWheel, err := FindCachedWheel(s.name, s.version)
+	if err != nil {
+		return err
+	} else if cachedWheel != "" {
+		return ExtractWheel(cachedWheel)
+	}
 	fmt.Printf("💩 installing: %s-%s %s\n", s.name, s.version, s.url)
-
-	// TODO: Check if there is a compatible .whl matching the name and version in the
-	// wheels directory already.
 
 	file, err := s.fetch(ctx)
 	if err != nil {
@@ -164,9 +168,18 @@ func (s *Sdist) Install(ctx context.Context) error {
 		return fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
 	}
 
-	// TODO: Move wheel to the cache
+	// Move binary distribution to cache.
+	cache, err := GetCacheDir()
+	if err != nil {
+		return err
+	}
+	cachedPath := filepath.Join(cache, filepath.Base(matches[0]))
 
-	return ExtractWheel(matches[0])
+	if err := os.Rename(matches[0], cachedPath); err != nil {
+		return err
+	}
+
+	return ExtractWheel(cachedPath)
 }
 
 func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {

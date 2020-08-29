@@ -7,6 +7,9 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
+
+	"github.com/AlexanderEkdahl/rope/version"
 )
 
 // ReadRopefile finds and reads the rope.json file by recursively
@@ -91,4 +94,35 @@ func GetCacheDir() (string, error) {
 	}
 
 	return cacheDir, nil
+}
+
+// FindCachedWheel searches the wheel cache to see if there is a wheel already built
+// and compatible with the current environment.
+func FindCachedWheel(name string, v version.Version) (string, error) {
+	if v.Unspecified() {
+		return "", nil
+	}
+
+	cache, err := GetCacheDir()
+	if err != nil {
+		return "", err
+	}
+
+	matches, err := filepath.Glob(filepath.Join(cache, "%s-%s-*.whl"))
+	if err != nil {
+		return "", err
+	}
+
+	for _, match := range matches {
+		fi, err := ParseWheelFilename(filepath.Base(match))
+		if err != nil {
+			return "", err
+		}
+
+		if fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+			return match, nil
+		}
+	}
+
+	return "", nil
 }

@@ -130,7 +130,7 @@ func compatibleOS(platform string, goos string) bool {
 		// matches manylinux1, manylinux2010, manylinux2014
 		// TODO: Implement platform detection to check for specific manylinux support
 		// Investigate if it should prefer the highest version?
-		return strings.HasPrefix(platform, "manylinux")
+		return strings.HasPrefix(platform, "manylinux") || strings.HasPrefix(platform, "linux")
 	default:
 		fmt.Printf("unknown OS: %s\n", goos)
 		return false
