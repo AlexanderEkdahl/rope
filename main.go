@@ -38,7 +38,7 @@ func buildPythonPath() (string, error) {
 	return strings.Join(paths, string(os.PathListSeparator)), nil
 }
 
-const defaultHelp = `Rope is a tool for managing Python dependencies.
+const defaultHelp = `Rope is a tool for managing Python dependencies 🧩
 
 Usage:
 
