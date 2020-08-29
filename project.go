@@ -9,7 +9,7 @@ import (
 )
 
 type Project struct {
-	Python       string       `json:"python"`
+	Python       string       `json:"python,omitempty"`
 	Dependencies []Dependency `json:"dependencies"`
 }
 

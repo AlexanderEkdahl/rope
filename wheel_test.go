@@ -50,22 +50,37 @@ func TestCompatiblePlatform(t *testing.T) {
 	testCases := []struct {
 		platform string
 		goos     string
+		goarch   string
 		result   bool
 	}{
 		{
 			"macosx_10_6_intel.macosx_10_9_intel.macosx_10_9_x86_64.macosx_10_10_intel.macosx_10_10_x86_64",
 			"darwin",
+			"amd64",
 			true,
 		},
 		{
 			"any",
 			"darwin",
+			"amd64",
+			true,
+		},
+		{
+			"manylinux2014_aarch64",
+			"linux",
+			"amd64",
+			false,
+		},
+		{
+			"manylinux2010_x86_64",
+			"linux",
+			"amd64",
 			true,
 		},
 	}
 	for i, tC := range testCases {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			result := CompatiblePlatform(tC.platform, tC.goos)
+			result := CompatiblePlatform(tC.platform, tC.goos, tC.goarch)
 			if result != tC.result {
 				t.Fatalf("CompatiblePlatform(%s, %s) == %v, expected: %v", tC.platform, tC.goos, result, tC.result)
 			}

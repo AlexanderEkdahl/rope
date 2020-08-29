@@ -59,3 +59,5 @@ The following dependencies are statically included in the resulting binary and d
 - Windows support
 - Integration tests against data pulled through public BigQuery dataset
 - Integration tests against top-N python packages.
+- Support specified Python version
+- Use https://warehouse.pypa.io/api-reference/json/ for faster dependency search

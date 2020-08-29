@@ -43,7 +43,7 @@ func (p *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 					return nil, err
 				}
 
-				if fi.Compatible("cp37", "", runtime.GOOS) {
+				if fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
 					foundPackage = &Wheel{
 						name:     fi.Name,
 						filename: filename,
@@ -140,7 +140,7 @@ func (p *PyPI) checkCompatability(href string) (Package, bool) {
 			return nil, false
 		}
 
-		if !fi.Compatible("cp37", "", runtime.GOOS) {
+		if !fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
 			return nil, false
 		}
 

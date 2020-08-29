@@ -50,13 +50,18 @@ type Sdist struct {
 	wheel *Wheel
 }
 
-func (s *Sdist) Name() string             { return s.name }
+// Name returns the canonical name of the source distribution package.
+func (s *Sdist) Name() string { return s.name }
+
+// Version returns the canonical version of the source distribution package.
 func (s *Sdist) Version() version.Version { return s.version }
 
-// TODO: Figure out how transitive dependencies of sdist packages
-// even work. install_requires?
-// python3 setup.py --requires
-func (s *Sdist) Dependencies() []Dependency { return nil }
+// Dependencies is supposed to return the dependencies of this package.
+// This is not implemented yet as it requires invoking the Python interpreter.
+func (s *Sdist) Dependencies() []Dependency {
+	// TODO: Implement `python3 setup.py --requires`
+	return nil
+}
 
 // Shim to wrap setup.py invocation with setuptools. This allows rope
 // to install legacy packages. This is the same method as used by pip.
@@ -64,6 +69,9 @@ func (s *Sdist) Dependencies() []Dependency { return nil }
 // https://github.com/pypa/pip/blob/9cbe8fbdd0a1bd1bd4e483c9c0a556e9910ef8bb/src/pip/_internal/utils/setuptools_build.py#L14-L20
 const setuptoolsShim = `import sys, setuptools, tokenize; sys.argv[0] = 'setup.py'; __file__='setup.py';f=getattr(tokenize, 'open', open)(__file__);code=f.read().replace('\\r\\n', '\\n');f.close();exec(compile(code, __file__, 'exec'))`
 
+// Install extracts the source distribution and invokes the Python interpreter to
+// run a shim around setuptools to create a Python wheel package. If successful
+// the wheel is then installed.
 func (s *Sdist) Install(ctx context.Context) error {
 	fmt.Printf("💩 installing: %s-%s %s\n", s.name, s.version, s.url)
 
@@ -155,6 +163,8 @@ func (s *Sdist) Install(ctx context.Context) error {
 	if len(matches) != 1 {
 		return fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
 	}
+
+	// TODO: Move wheel to the cache
 
 	return ExtractWheel(matches[0])
 }

@@ -54,7 +54,7 @@ func ParseWheelFilename(filename string) (WheelFilename, error) {
 	}, nil
 }
 
-func (fi *WheelFilename) Compatible(pythonVersion, abi, goos string) bool {
+func (fi *WheelFilename) Compatible(pythonVersion, abi, goos, gorch string) bool {
 	if !CompatiblePython(fi.PythonVersion, pythonVersion) {
 		return false
 	}
@@ -63,7 +63,7 @@ func (fi *WheelFilename) Compatible(pythonVersion, abi, goos string) bool {
 		return false
 	}
 
-	if !CompatiblePlatform(fi.Platform, goos) {
+	if !CompatiblePlatform(fi.Platform, goos, gorch) {
 		return false
 	}
 
@@ -101,7 +101,7 @@ func CompatibleABI(candidate, abi string) bool {
 }
 
 // TODO: Rank by specificity
-func CompatiblePlatform(platform, goos string) bool {
+func CompatiblePlatform(platform, goos, goarch string) bool {
 	if platform == "any" {
 		return true
 	}
@@ -109,17 +109,44 @@ func CompatiblePlatform(platform, goos string) bool {
 	split := strings.Split(platform, ".")
 	if len(split) > 1 {
 		for _, part := range split {
-			if CompatiblePlatform(part, goos) {
+			if CompatiblePlatform(part, goos, goarch) {
 				return true
 			}
 		}
 	}
 
+	return compatibleOS(platform, goos) && compatibleCPUArchitecture(platform, goarch)
+}
+
+func compatibleOS(platform string, goos string) bool {
+	// TODO: Implement proper matching
 	switch goos {
 	case "darwin":
 		return strings.HasPrefix(platform, "macosx")
+	case "linux":
+		// https://www.python.org/dev/peps/pep-0513/
+		// https://www.python.org/dev/peps/pep-0571/
+		// https://www.python.org/dev/peps/pep-0599/
+		// matches manylinux1, manylinux2010, manylinux2014
+		// TODO: Implement platform detection to check for specific manylinux support
+		// Investigate if it should prefer the highest version?
+		return strings.HasPrefix(platform, "manylinux")
 	default:
-		panic(fmt.Sprintf("unsupported OS: %s", goos))
+		fmt.Printf("unknown OS: %s\n", goos)
+		return false
+	}
+}
+
+func compatibleCPUArchitecture(platform, goarch string) bool {
+	switch goarch {
+	case "amd64":
+		return strings.HasSuffix(platform, "x86_64") || strings.HasSuffix(platform, "amd64")
+	case "i386":
+		return strings.HasSuffix(platform, "i686")
+	case "arm64":
+		return strings.HasSuffix(platform, "aarch64")
+	default:
+		return false
 	}
 }
 
@@ -184,6 +211,13 @@ func ExtractWheel(path string) error {
 		f, err := file.Open()
 		if err != nil {
 			return err
+		}
+
+		if file.FileInfo().IsDir() {
+			// Skip directories as parent directories are automatically
+			// created. However, this may cause issues if a package
+			// expects an empty folder in a certain location.
+			continue
 		}
 
 		target := filepath.Join(installPath, file.Name)
