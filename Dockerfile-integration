@@ -1,0 +1,17 @@
+FROM golang:1.15 AS go
+
+WORKDIR /rope
+
+COPY . .
+
+RUN go build -o /rope -mod vendor
+
+# Build integration tests into an executable that can be moved to the Python image
+RUN go test -c -mod vendor -o /integration_test -tags integration ./integration/
+
+FROM python:3.7
+
+COPY --from=go /integration_test /usr/local/bin/
+COPY --from=go /rope /usr/local/bin/
+
+ENTRYPOINT ["integration_test"]
