@@ -77,10 +77,18 @@ func FindRopefile() (string, error) {
 }
 
 func GetCacheDir() (string, error) {
-	// Use os.CacheDir thing or tmp if caching is disabled
-	if err := os.MkdirAll("./ropedir/cache", 0777); err != nil {
+	// TODO: Support disabling cache or using a specified cache location.
+	// If caching is disabled then a temporary directory must be created
+	// and cleaned up before the program exits.
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	cacheDir := filepath.Join(userCacheDir, "rope", "cache")
+
+	if err := os.MkdirAll(cacheDir, 0777); err != nil {
 		return "", fmt.Errorf("failed to created cache directory: %w", err)
 	}
 
-	return "./ropedir/cache", nil
+	return cacheDir, nil
 }

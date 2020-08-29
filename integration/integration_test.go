@@ -99,7 +99,6 @@ func TestCLI(t *testing.T) {
 			}
 
 			ctx := context.Background()
-
 			if deadline, ok := t.Deadline(); ok {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithDeadline(ctx, deadline)
