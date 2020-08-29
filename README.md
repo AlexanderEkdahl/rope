@@ -86,3 +86,4 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - GitHub Actions release process
 - Return the most compatible version if multiple version are available.
 - Fix issues with partial files being downloaded.
+- Ensure all packages found at https://johnfraney.ca/posts/2019/11/19/pipenv-poetry-benchmarks-ergonomics-2/ can be installed.

@@ -105,11 +105,13 @@ func TestCLI(t *testing.T) {
 			verification: `import urllib3; import botocore`,
 		},
 	}
-	for name, tC := range testCases {
+	for name, tc := range testCases {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
-			if testing.Short() && tC.slow {
+			if testing.Short() && tc.slow {
 				t.Skip()
 			}
+			t.Parallel()
 
 			ctx := context.Background()
 			if deadline, ok := t.Deadline(); ok {
@@ -119,7 +121,7 @@ func TestCLI(t *testing.T) {
 			}
 
 			tmp := t.TempDir()
-			for _, step := range tC.steps {
+			for _, step := range tc.steps {
 				t0 := time.Now()
 				cmd := exec.CommandContext(ctx, "rope", step.args...)
 				cmd.Dir = tmp
@@ -138,8 +140,8 @@ func TestCLI(t *testing.T) {
 				}
 			}
 
-			if !t.Failed() && tC.verification != "" {
-				cmd := exec.CommandContext(ctx, "rope", "run", "python", "-c", tC.verification)
+			if !t.Failed() && tc.verification != "" {
+				cmd := exec.CommandContext(ctx, "rope", "run", "python", "-c", tc.verification)
 				cmd.Dir = tmp
 				output, err := cmd.CombinedOutput()
 				if cmd.ProcessState.ExitCode() != 0 {
