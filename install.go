@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/AlexanderEkdahl/rope/pep508"
@@ -12,7 +11,7 @@ import (
 
 // TODO: Add update parameter for when to use the latest version of transitive
 // dependency.
-func add(timeout time.Duration, packages []string) error {
+func install(timeout time.Duration, packages []string) error {
 	ctx := context.Background()
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -34,20 +33,17 @@ func add(timeout time.Duration, packages []string) error {
 		if len(d.Versions) > 1 {
 			return fmt.Errorf("expected at most a single version, got: %s", d.Versions)
 		}
-		// Should this be PEP508 conformant as well? Do whatever pip does
-		split := strings.Split(p, "=")
-		var v version.Version
-		if len(split) > 1 {
-			var err error
-			v, err = version.Parse(split[1])
-			if err != nil {
-				return err
-			}
+
+		var version version.Version
+		if len(d.Versions) > 0 {
+			version = d.Versions[0].Version
 		}
+		fmt.Println("name", d.DistributionName)
+		fmt.Println("version", version)
 
 		project.Dependencies = append(project.Dependencies, Dependency{
-			Name:    split[0],
-			Version: v,
+			Name:    d.DistributionName,
+			Version: version,
 		})
 	}
 
@@ -66,12 +62,12 @@ func add(timeout time.Duration, packages []string) error {
 			return fmt.Errorf("failed to find package after version selection: %w", err)
 		}
 
-		// This function need to find the package AGAIN? doesn't make sense
+		// TODO: This function need to find the package AGAIN? doesn't make sense
 		if err := p.Install(ctx); err != nil {
 			return fmt.Errorf("installing '%s-%s': %w", d.Name, d.Version, err)
 		}
 	}
 
 	project.Dependencies = list
-	return WriteRopefile(project)
+	return WriteRopefile(project, "")
 }
