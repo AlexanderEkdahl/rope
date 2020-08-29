@@ -7,7 +7,6 @@ on:
     branches: [ master ]
 
 jobs:
-
   build:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -24,3 +23,13 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+    - name: Build Docker image
+      run: docker build -t rope_integration -f Dockerfile-integration .
+    - name: Run
+      run: docker run rope_integration -test.v
