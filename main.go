@@ -10,6 +10,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// Version identifies the version of rope. This can be modified by CI during
+// the release process.
+var Version = "dev"
+
 func buildPythonPath() (string, error) {
 	rope, err := ReadRopefile()
 	if err != nil {
@@ -68,7 +72,7 @@ func run(args []string) (int, error) {
 		fmt.Printf(defaultHelp)
 		return 2, nil
 	case "version", "--version":
-		fmt.Printf("rope version: 0.1.0\n") // TODO: Inject version
+		fmt.Printf("rope version: %s\n", Version)
 		return 0, nil
 	case "init":
 		if path, err := FindRopefile(); err == ErrRopefileNotFound {
