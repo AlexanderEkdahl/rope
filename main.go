@@ -83,8 +83,10 @@ func run(args []string) (int, error) {
 		// TODO: Implement command to remove dependency(error if transitive)
 		return 1, fmt.Errorf("not implemented")
 	case "export":
-		// TODO: Implement command to export to requirements.txt for interop
-		return 1, fmt.Errorf("not implemented")
+		if err := ExportRequirements(context.Background(), os.Stdout); err != nil {
+			return 1, err
+		}
+		return 0, nil
 	case "show":
 		// TODO: Implement command to show all dependenies along with a tree view
 		return 1, fmt.Errorf("not implemented")

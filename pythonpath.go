@@ -15,9 +15,8 @@ func buildPythonPath(ctx context.Context) (string, error) {
 	}
 
 	index := &Index{
-		url: "https://pypi.python.org/simple",
+		url: DefaultIndex,
 	}
-
 	list, _, err := MinimalVersionSelection(ctx, project.Dependencies, index)
 	if err != nil {
 		return "", fmt.Errorf("failed version selection: %w", err)

@@ -16,6 +16,12 @@ import (
 	"github.com/blang/semver/v4"
 )
 
+// Defalt constants for the Python Package index.
+const (
+	PythonPackageIndex = "https://pypi.python.org/"
+	DefaultIndex       = PythonPackageIndex + "/simple"
+)
+
 // Index is an abstraction over interacting with a Python package repository
 // such as the Python Package Index.
 // The "API" is defined at: https://www.python.org/dev/peps/pep-0503/

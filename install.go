@@ -49,9 +49,8 @@ func install(timeout time.Duration, packages []string) error {
 	}
 
 	index := &Index{
-		url: "https://pypi.python.org/simple",
+		url: DefaultIndex,
 	}
-
 	list, minimalRequirements, err := MinimalVersionSelection(ctx, project.Dependencies, index)
 	if err != nil {
 		return fmt.Errorf("failed version selection: %w", err)
