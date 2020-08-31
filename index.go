@@ -80,6 +80,7 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 		defer res.Body.Close()
 
 		// TODO: Check non 200
+		// TODO: Verify checksum
 
 		dec := xml.NewDecoder(res.Body)
 		for {
@@ -138,7 +139,8 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 	}
 
 	filename := path.Base(url.EscapedPath())
-	if strings.HasSuffix(filename, ".whl") {
+	switch {
+	case strings.HasSuffix(filename, ".whl"):
 		fi, err := ParseWheelFilename(filename)
 		if err != nil {
 			// fmt.Println("debug_err", err)
@@ -161,7 +163,7 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 			version:  v,
 			url:      href,
 		}, true
-	} else if strings.HasSuffix(filename, ".tar.gz") {
+	case strings.HasSuffix(filename, ".tar.gz"):
 		sdist, err := ParseSdistFilename(filename)
 		if err != nil {
 			return nil, false
@@ -169,17 +171,16 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 		sdist.url = href
 
 		return sdist, true
-	} else if strings.HasSuffix(filename, ".egg") {
-		// Ignore .egg distributions
+	case strings.HasSuffix(filename, ".egg"):
+		fallthrough
+	case strings.HasSuffix(filename, ".exe"):
+		fallthrough
+	case strings.HasSuffix(filename, ".zip"):
+		fallthrough
+	case strings.HasSuffix(filename, ".rpm"):
 		return nil, false
-	} else if strings.HasSuffix(filename, ".exe") {
-		// Ignore .exe distributions
-		return nil, false
-	} else if strings.HasSuffix(filename, ".zip") {
-		// Ignore .zip distributions
+	default:
+		fmt.Println("unknown distribution type:", filename)
 		return nil, false
 	}
-
-	fmt.Println("debug", "unknown distribution type:", filename)
-	return nil, false
 }

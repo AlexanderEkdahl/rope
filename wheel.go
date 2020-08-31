@@ -199,7 +199,7 @@ func ExtractWheel(path string) error {
 	} else if err != nil {
 		return err
 	} else {
-		fmt.Println("package already installed: 🧩")
+		// fmt.Println("package already installed: 🧩")
 		return nil
 	}
 
@@ -263,7 +263,7 @@ func (p *Wheel) download(ctx context.Context) error {
 	} else if err != nil {
 		return err
 	} else if err == nil {
-		fmt.Printf("Found cache for %s\n", p.filename)
+		// fmt.Printf("Found cache for %s\n", p.filename)
 		return nil
 	}
 
@@ -361,7 +361,6 @@ func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependenc
 			if err != nil {
 				return nil, err
 			}
-			fmt.Printf("%s: %s\n", p.name, row)
 
 			dependencies = append(dependencies, Dependency{
 				Name:    dep.DistributionName,

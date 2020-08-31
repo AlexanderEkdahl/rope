@@ -77,7 +77,6 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - If a package depends on an unspecified version it should not lead to the latest version being installed if another package depends on a specific minimal version(this can be implemented by updating the reduce method to not pick <latest> over a specific version *unless* the latest requirement comes from the top-level package)
 - Support --no-binary packag installs
 - Verify files have not been tampered with using the RECORD
-- Russ Cox Algorithm R. Compute a Minimal Requirement List
 - Windows support
 - Integration tests against data pulled through public BigQuery dataset
 - Integration tests against top-N python packages.
@@ -87,3 +86,5 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Return the most compatible version if multiple version are available.
 - Fix issues with partial files being downloaded.
 - Ensure all packages found at https://johnfraney.ca/posts/2019/11/19/pipenv-poetry-benchmarks-ergonomics-2/ can be installed.
+- Version should just be a plain string so that it can be used as the key in dictionary. Or anything comparable.
+- Fix issues with partially downloaded artifacts(Rename them/verify/delete if still corrupted)

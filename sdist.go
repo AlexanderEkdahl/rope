@@ -195,7 +195,6 @@ func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
 	} else if err != nil {
 		return nil, err
 	} else if err == nil {
-		fmt.Printf("Found cache for %s\n", s.filename)
 		return file, nil
 	}
 

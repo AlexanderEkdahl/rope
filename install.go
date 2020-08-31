@@ -38,9 +38,10 @@ func install(timeout time.Duration, packages []string) error {
 		if len(d.Versions) > 0 {
 			version = d.Versions[0].Version
 		}
-		fmt.Println("name", d.DistributionName)
-		fmt.Println("version", version)
 
+		// TODO: This should search for the packages on the index to make sure
+		// the name/version exists. The inputs to MinimalVersionSelection should
+		// not have to deal with normalizing names.
 		project.Dependencies = append(project.Dependencies, Dependency{
 			Name:    d.DistributionName,
 			Version: version,
@@ -51,7 +52,7 @@ func install(timeout time.Duration, packages []string) error {
 		url: "https://pypi.python.org/simple",
 	}
 
-	list, err := MinimalVersionSelection(ctx, project.Dependencies, index)
+	list, minimalRequirements, err := MinimalVersionSelection(ctx, project.Dependencies, index)
 	if err != nil {
 		return fmt.Errorf("failed version selection: %w", err)
 	}
@@ -68,6 +69,6 @@ func install(timeout time.Duration, packages []string) error {
 		}
 	}
 
-	project.Dependencies = list
+	project.Dependencies = minimalRequirements
 	return WriteRopefile(project, "")
 }

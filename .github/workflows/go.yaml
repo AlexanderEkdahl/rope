@@ -31,4 +31,4 @@ jobs:
     - name: Build Docker image
       run: docker build -t integration -f Dockerfile-integration .
     - name: Run
-      run: docker run integration -test.v
+      run: docker run integration -test.failfast --test.parallel=4

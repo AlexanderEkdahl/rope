@@ -1,11 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/pflag"
 )
@@ -13,34 +12,6 @@ import (
 // Version identifies the version of rope. This can be modified by CI during
 // the release process.
 var Version = "dev"
-
-func buildPythonPath() (string, error) {
-	rope, err := ReadRopefile()
-	if err != nil {
-		return "", err
-	}
-
-	ropedir, err := filepath.Abs("ropedir")
-	if err != nil {
-		return "", err
-	}
-	paths := make([]string, 0, len(rope.Dependencies))
-	for _, d := range rope.Dependencies {
-		// TODO: This should install the missing dependencies
-		glob := filepath.Join(ropedir, "packages", fmt.Sprintf("%s-%s*", d.Name, d.Version))
-		matches, err := filepath.Glob(glob)
-		if err != nil {
-			return "", err
-		}
-
-		// TODO: Verify arch etc
-		if len(matches) > 0 {
-			paths = append(paths, matches[0])
-		}
-	}
-
-	return strings.Join(paths, string(os.PathListSeparator)), nil
-}
 
 const defaultHelp = `Rope is a tool for managing Python dependencies 🧩
 
@@ -121,14 +92,14 @@ func run(args []string) (int, error) {
 		// TODO: Implement operations for show information/clearing the cache
 		return 1, fmt.Errorf("not implemented")
 	case "pythonpath":
-		pythonPath, err := buildPythonPath()
+		pythonPath, err := buildPythonPath(context.Background())
 		if err != nil {
 			return 1, err
 		}
 		fmt.Printf(pythonPath)
 		return 0, nil
 	case "run":
-		pythonPath, err := buildPythonPath()
+		pythonPath, err := buildPythonPath(context.Background())
 		if err != nil {
 			return 1, err
 		}

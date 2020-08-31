@@ -104,6 +104,19 @@ func TestCLI(t *testing.T) {
 			},
 			verification: `import urllib3; import botocore`,
 		},
+		"install with weird casing": {
+			steps: []step{
+				{
+					args:             []string{"init"},
+					expectedExitCode: 0,
+				},
+				{
+					args:             []string{"install", "nUmPy"},
+					expectedExitCode: 0,
+				},
+			},
+			verification: `import numpy`,
+		},
 	}
 	for name, tc := range testCases {
 		tc := tc

@@ -14,14 +14,17 @@ type Project struct {
 }
 
 type Dependency struct {
-	Name    string // Name may differ in casing depending on where it comes from
+	// Name is the canonical name of the package
+	Name string
+	// TODO: Augment version.Version to be directly comparable
 	Version version.Version
 
-	// This is required to ensure reproduceable build in the event of missing
-	// requirement specifier of transitive dependencies and preventing always
-	// using the latest version in cases where transitive dependencies do not
-	// specify a version.
-	RequestedVersion version.Version
+	// Unspecified is true if no version constraint is applied
+	// to this dependency. Special care must be taken in this
+	// scenario to ensure reproduceable builds and not blindly
+	// selecting a version that is too recent when other
+	// dependencies specify a lower version.
+	Unspecified bool
 }
 
 func (d *Dependency) UnmarshalJSON(b []byte) error {

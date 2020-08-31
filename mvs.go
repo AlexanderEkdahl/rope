@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/AlexanderEkdahl/rope/version"
 )
@@ -22,26 +24,27 @@ type PackageIndex interface {
 	FindPackage(ctx context.Context, name string, v version.Version) (Package, error)
 }
 
-type Tree []Node
+// Normalize package names.
+// https://www.python.org/dev/peps/pep-0503/#normalized-names
+var normalizationRe = regexp.MustCompile(`[-_.]+`)
 
-// Walk invokes f for ever node in the tree in breadth first order
-func (t *Tree) Walk(f func(d Dependency, depth int)) {
-	walkTree(t, 0, f)
+func normalizedPackageName(name string) string {
+	return strings.ToLower(normalizationRe.ReplaceAllString(name, "-"))
 }
 
-func walkTree(t *Tree, depth int, f func(d Dependency, depth int)) {
-	for _, d := range *t {
-		f(d.Value, depth)
-
-		if len(d.children) > 0 {
-			walkTree(&d.children, depth+1, f)
+func normalizeDependencies(ds []Dependency) []Dependency {
+	ret := make([]Dependency, len(ds))
+	for i, d := range ds {
+		ret[i] = Dependency{
+			Name:    normalizedPackageName(d.Name),
+			Version: d.Version,
 		}
 	}
+	return ret
 }
 
-type Node struct {
-	Value    Dependency
-	children Tree
+func dependencyID(d Dependency) string {
+	return normalizedPackageName(d.Name) + d.Version.String()
 }
 
 // MinimalVersionSelection recursively visits every dependency's dependencies and builds
@@ -49,109 +52,148 @@ type Node struct {
 // to remove duplicate dependencies by only keeping the greatest version of each entry.
 // Finally, the list is sorted by name.
 //
+// Accompanying the full build list is a minimal list of requirements that when used
+// induces the same full build list.
+//
 // The runtime of this algorithm is proportial to the size of the unreduced list(|B|) plus
 // the number of dependencies specified by each dependency(at most |B|²).
 //
 // This algorithm and the analysis is from https://research.swtch.com/vgo-mvs by Russ Cox.
-func MinimalVersionSelection(ctx context.Context, dependencies []Dependency, index PackageIndex) ([]Dependency, error) {
-	// 1. Find versions
-	tree, err := minimalVersionSelection(ctx, dependencies, index, make(map[string]struct{}))
-	if err != nil {
-		return nil, err
+func MinimalVersionSelection(ctx context.Context, base []Dependency, index PackageIndex) ([]Dependency, []Dependency, error) {
+	type node struct {
+		value        Dependency
+		dependencies []Dependency
 	}
 
-	// tree.Walk(func(d Dependency, depth int) {
-	// 	fmt.Printf("%s%s: %s(%s)\n", strings.Repeat("  ", depth), d.Name, d.Version, d.RequestedVersion)
-	// })
-
-	// 2. Resolve duplicates
-	reduced := reduce(tree)
-
-	// 3. Sort results
-	sort.Slice(reduced, func(i, j int) bool {
-		return reduced[i].Name < reduced[j].Name
-	})
-
-	return reduced, nil
-}
-
-func minimalVersionSelection(
-	ctx context.Context,
-	dependencies []Dependency,
-	index PackageIndex,
-	visited map[string]struct{},
-) (Tree, error) {
-	if len(dependencies) == 0 {
-		return nil, nil
-	}
-
-	nodes := []Node{}
-	for _, d := range dependencies {
-		// Prevent cycles
-		if _, ok := visited[fmt.Sprintf("%s-%s", d.Name, d.Version)]; ok {
-			continue
+	// replace returns true if v2 should replace d1
+	replace := func(d1 Dependency, v2 version.Version, v2unspecified bool) bool {
+		if v2unspecified {
+			return false
+		} else if d1.Unspecified {
+			return true
 		}
-		visited[fmt.Sprintf("%s-%s", d.Name, d.Version)] = struct{}{}
 
-		// TODO: Parallelize by running in separate goroutine
+		return v2.GT(d1.Version.Version)
+	}
+
+	visited := make(map[string]struct{})
+	buildDependencies := make(map[string]node)
+
+	work := append([]Dependency{}, normalizeDependencies(base)...)
+	for len(work) > 0 {
+		d := work[len(work)-1]
+		work = work[:len(work)-1]
+
 		p, err := index.FindPackage(ctx, d.Name, d.Version)
 		if err != nil {
-			return nil, fmt.Errorf("finding package '%s-%s': %w", d.Name, d.Version, err)
+			return nil, nil, fmt.Errorf("finding package '%s-%s': %w", d.Name, d.Version, err)
 		}
 
-		transitiveNodes, err := minimalVersionSelection(ctx, p.Dependencies(), index, visited)
-		if err != nil {
-			return nil, err
-		}
-		nodes = append(nodes, Node{
-			// The found dependency is assumed to be the canonical representation of the
-			// package as the exact version and casing may differ from the candidate version.
-			Value: Dependency{
-				Name:    p.Name(),
-				Version: p.Version(),
-
-				RequestedVersion: d.Version,
-			},
-			children: transitiveNodes,
-		})
-	}
-
-	return nodes, nil
-}
-
-// reduce removes duplicate entries in the list and only keeps the greatest
-// version of each dependency.
-func reduce(t Tree) []Dependency {
-	type dependencyDepth struct {
-		dependency Dependency
-		depth      int
-
-		requestedVersion version.Version
-	}
-
-	ps := make(map[string][]dependencyDepth)
-
-	t.Walk(func(d Dependency, depth int) {
-		ps[d.Name] = append(ps[d.Name], dependencyDepth{
-			dependency: d,
-			depth:      depth,
-
-			requestedVersion: d.RequestedVersion,
-		})
-	})
-
-	reducedList := make([]Dependency, 0)
-	for _, d := range ps {
-		greatest := d[0].dependency
-
-		for i := 1; i < len(d); i++ {
-			if d[i].dependency.Version.GT(greatest.Version.Version) {
-				greatest = d[i].dependency
+		// TODO: This specialized logic should be moved into an abstraction(Reqs.Max)
+		if v, ok := buildDependencies[normalizedPackageName(p.Name())]; !ok || replace(v.value, p.Version(), d.Version.Unspecified()) {
+			buildDependencies[normalizedPackageName(p.Name())] = node{
+				value:        Dependency{p.Name(), p.Version(), d.Version.Unspecified()},
+				dependencies: normalizeDependencies(p.Dependencies()),
 			}
 		}
 
-		reducedList = append(reducedList, greatest)
+		for _, d := range p.Dependencies() {
+			if _, ok := visited[dependencyID(d)]; ok {
+				// prevent cycles
+				continue
+			}
+			visited[dependencyID(d)] = struct{}{}
+
+			work = append(work, d)
+		}
 	}
 
-	return reducedList
+	// Compute the minimal list that would induce the complete build list.
+	var postorder []node
+	cache := make(map[string][]Dependency)
+	// Keep track of all unbounded dependencies so that they can be added
+	// to the minimal requirement list to ensure reproduceable builds
+	unspecified := make(map[string]bool)
+	// replace this with simple recursive loop?
+	var walk func(node)
+	walk = func(n node) {
+		if _, ok := cache[dependencyID(n.value)]; ok {
+			return
+		}
+		cache[dependencyID(n.value)] = n.dependencies
+		if n.value.Unspecified {
+			unspecified[n.value.Name] = true
+		}
+		for _, d := range n.dependencies {
+			walk(buildDependencies[d.Name])
+		}
+		postorder = append(postorder, n)
+	}
+	for _, node := range buildDependencies {
+		walk(node)
+	}
+
+	have := map[string]bool{}
+	var walk2 func(Dependency)
+	walk2 = func(d Dependency) {
+		if have[dependencyID(d)] {
+			return
+		}
+		have[dependencyID(d)] = true
+
+		for _, d := range cache[dependencyID(d)] {
+			walk2(d)
+		}
+	}
+	max := map[string]version.Version{}
+	for name, node := range buildDependencies {
+		if v, ok := max[name]; ok {
+			if node.value.Version.GT(v.Version) {
+				max[name] = node.value.Version
+			}
+		} else {
+			max[name] = node.value.Version
+		}
+	}
+	minimalDependencies := make(map[string]Dependency)
+	for _, d := range base {
+		d2 := Dependency{Name: d.Name, Version: max[normalizedPackageName(d.Name)]}
+		minimalDependencies[d.Name] = d2
+		walk2(d)
+	}
+	for i := len(postorder) - 1; i >= 0; i-- {
+		n := postorder[i]
+		if max[n.value.Name].LE(n.value.Version.Version) {
+			continue
+		}
+		if !have[n.value.Name] {
+			minimalDependencies[postorder[i].value.Name] = postorder[i].value
+			walk(n)
+		}
+	}
+	// Finally add all unbounded versions to the minimal requirement list to ensure
+	// results are reproduceable when a new version get released.
+	// This should be revisited as I don't think it handles versions correctly
+	for name := range unspecified {
+		minimalDependencies[name] = buildDependencies[name].value
+	}
+
+	buildList := make([]Dependency, 0, len(buildDependencies))
+	for _, node := range buildDependencies {
+		buildList = append(buildList, node.value)
+	}
+	minimalList := make([]Dependency, 0, len(minimalDependencies))
+	for _, node := range minimalDependencies {
+		minimalList = append(minimalList, node)
+	}
+
+	// Sort to ensure stable results
+	sort.Slice(buildList, func(i, j int) bool {
+		return buildList[i].Name < buildList[j].Name
+	})
+	sort.Slice(minimalList, func(i, j int) bool {
+		return minimalList[i].Name < minimalList[j].Name
+	})
+
+	return buildList, minimalList, nil
 }

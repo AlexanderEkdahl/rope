@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/AlexanderEkdahl/rope/version"
@@ -14,7 +15,8 @@ type testPackageIndex struct {
 
 func (pi *testPackageIndex) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
 	var foundPackage Package
-	for _, p := range pi.index[name] {
+	// TODO: Any normalization done here should move into index/Package abstraction
+	for _, p := range pi.index[strings.ToLower(name)] {
 		if v.Equals(semver.Version{}) {
 			foundPackage = p
 			// Keep searching as there may be another package with a higher
@@ -57,7 +59,7 @@ func TestVersionSelection(t *testing.T) {
 	// Dependency graph taken from: https://research.swtch.com/vgo-mvs
 	index := &testPackageIndex{
 		map[string][]testPackage{
-			"B": {
+			"b": {
 				{
 					name:    "B",
 					version: version.MustParse("1.1.0"),
@@ -79,7 +81,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"C": {
+			"c": {
 				{
 					name:    "C",
 					version: version.MustParse("1.1.0"),
@@ -105,7 +107,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"D": {
+			"d": {
 				{
 					name:    "D",
 					version: version.MustParse("1.1.0"),
@@ -147,7 +149,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"E": {
+			"e": {
 				{
 					name:    "E",
 					version: version.MustParse("1.1.0"),
@@ -161,7 +163,7 @@ func TestVersionSelection(t *testing.T) {
 					version: version.MustParse("1.3.0"),
 				},
 			},
-			"F": {
+			"f": {
 				{
 					name:    "F",
 					version: version.MustParse("1.1.0"),
@@ -173,7 +175,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"G": {
+			"g": {
 				{
 					name:    "G",
 					version: version.MustParse("1.1.0"),
@@ -188,8 +190,10 @@ func TestVersionSelection(t *testing.T) {
 		},
 	}
 
-	{
-		a := []Dependency{
+	verifyMinimalVersionSelection(
+		t,
+		index,
+		[]Dependency{
 			{
 				Name:    "B",
 				Version: version.MustParse("1.2.0"),
@@ -198,13 +202,8 @@ func TestVersionSelection(t *testing.T) {
 				Name:    "C",
 				Version: version.MustParse("1.2.0"),
 			},
-		}
-
-		list, err := MinimalVersionSelection(context.Background(), a, index)
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		expected := []Dependency{
+		},
+		[]Dependency{
 			{
 				Name:    "B",
 				Version: version.MustParse("1.2.0"),
@@ -221,20 +220,23 @@ func TestVersionSelection(t *testing.T) {
 				Name:    "E",
 				Version: version.MustParse("1.2.0"),
 			},
-		}
+		},
+		[]Dependency{
+			{
+				Name:    "B",
+				Version: version.MustParse("1.2.0"),
+			},
+			{
+				Name:    "C",
+				Version: version.MustParse("1.2.0"),
+			},
+		},
+	)
 
-		if len(expected) != len(list) {
-			t.Fatalf("build list != expected build list: got: %s, want: %s", list, expected)
-		}
-		for i := 0; i < len(expected); i++ {
-			if expected[i].Name != list[i].Name || expected[i].Version.NE(list[i].Version.Version) {
-				t.Fatalf("build list != expected build list: got: %s, want: %s", list, expected)
-			}
-		}
-	}
-
-	{
-		a := []Dependency{
+	verifyMinimalVersionSelection(
+		t,
+		index,
+		[]Dependency{
 			{
 				Name:    "B",
 				Version: version.MustParse("1.2.0"),
@@ -243,13 +245,8 @@ func TestVersionSelection(t *testing.T) {
 				Name:    "C",
 				Version: version.MustParse("1.3.0"), // Leads to cyclical import
 			},
-		}
-
-		list, err := MinimalVersionSelection(context.Background(), a, index)
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		expected := []Dependency{
+		},
+		[]Dependency{
 			{
 				Name:    "B",
 				Version: version.MustParse("1.2.0"),
@@ -274,17 +271,18 @@ func TestVersionSelection(t *testing.T) {
 				Name:    "G",
 				Version: version.MustParse("1.1.0"),
 			},
-		}
-
-		if len(expected) != len(list) {
-			t.Fatalf("build list != expected build list: got: %s, want: %s", list, expected)
-		}
-		for i := 0; i < len(expected); i++ {
-			if expected[i].Name != list[i].Name || expected[i].Version.NE(list[i].Version.Version) {
-				t.Fatalf("build list != expected build list: got: %s, want: %s", list, expected)
-			}
-		}
-	}
+		},
+		[]Dependency{
+			{
+				Name:    "B",
+				Version: version.MustParse("1.2.0"),
+			},
+			{
+				Name:    "C",
+				Version: version.MustParse("1.3.0"),
+			},
+		},
+	)
 }
 
 func TestVersionSelectionTransitiveUnbounded(t *testing.T) {
@@ -330,44 +328,139 @@ func TestVersionSelectionTransitiveUnbounded(t *testing.T) {
 		},
 	}
 
-	main := []Dependency{
-		{
-			Name: "tensorflow",
+	verifyMinimalVersionSelection(
+		t,
+		index,
+		[]Dependency{
+			{
+				Name: "torch",
+			},
+			{
+				Name: "tensorflow",
+			},
 		},
-		{
-			Name: "torch",
+		[]Dependency{
+			{
+				Name: "numpy",
+				// Version selection should not blindly select the latest version in case of
+				// a transitive dependency not specifying a version at all.
+				// 1.14.0 is the highest lower bound specified by any transitive dependency.
+				Version: version.MustParse("1.14.0"),
+			},
+			{
+				Name:    "tensorflow",
+				Version: version.MustParse("2.3.0"),
+			},
+			{
+				Name:    "torch",
+				Version: version.MustParse("1.6.0"),
+			},
+		},
+		[]Dependency{
+			{
+				Name:    "tensorflow",
+				Version: version.MustParse("2.3.0"),
+			},
+			{
+				Name:    "torch",
+				Version: version.MustParse("1.6.0"),
+			},
+		},
+	)
+}
+
+func TestVersionSelectionUnboundedReproduceable(t *testing.T) {
+	index := &testPackageIndex{
+		map[string][]testPackage{
+			"torch": {
+				{
+					name:    "torch",
+					version: version.MustParse("1.6.0"),
+					dependencies: []Dependency{
+						{
+							Name: "numpy",
+						},
+					},
+				},
+			},
+			"numpy": {
+				{
+					name:    "numpy",
+					version: version.MustParse("1.19.0"),
+				},
+				{
+					name:    "numpy",
+					version: version.MustParse("1.19.1"),
+				},
+			},
 		},
 	}
 
-	list, err := MinimalVersionSelection(context.Background(), main, index)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
-	expected := []Dependency{
+	minimal := []Dependency{
 		{
-			Name: "numpy",
-			// Version selection should not blindly select the latest version in case of
-			// a transitive dependency not specifying a version at all.
-			// 1.14.0 is the highest lower bound specified by any transitive dependency.
-			// TODO: Change the version to 1.14.0
-			Version: version.MustParse("1.15.0"),
-		},
-		{
-			Name:    "tensorflow",
-			Version: version.MustParse("2.3.0"),
+			Name:    "numpy",
+			Version: version.MustParse("1.19.1"),
 		},
 		{
 			Name:    "torch",
 			Version: version.MustParse("1.6.0"),
 		},
 	}
+	verifyMinimalVersionSelection(
+		t,
+		index,
+		[]Dependency{
+			{
+				Name: "torch",
+			},
+		},
+		minimal,
+		minimal,
+	)
 
-	if len(expected) != len(list) {
-		t.Fatalf("build list != expected build list: got: %s, want: %s", list, expected)
+	// New version of numpy is released. Ensure build is reproduceable.
+	index.index["numpy"] = append(index.index["numpy"], testPackage{
+		name:    "numpy",
+		version: version.MustParse("1.19.2"),
+	})
+	verifyMinimalVersionSelection(
+		t,
+		index,
+		minimal,
+		minimal,
+		minimal,
+	)
+}
+
+func verifyMinimalVersionSelection(
+	t *testing.T,
+	index PackageIndex,
+	baseDependencies []Dependency,
+	expectedBuild []Dependency,
+	expectedMinimal []Dependency,
+) {
+	build, minimal, err := MinimalVersionSelection(context.Background(), baseDependencies, index)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
 	}
-	for i := 0; i < len(expected); i++ {
-		if expected[i].Name != list[i].Name || expected[i].Version.NE(list[i].Version.Version) {
-			t.Fatalf("build list != expected build list: got: %s, want: %s", list, expected)
+
+	if len(expectedBuild) != len(build) {
+		t.Fatalf("build list != expected build list: got: %v, want: %v", build, expectedBuild)
+	}
+	for i := 0; i < len(expectedBuild); i++ {
+		if expectedBuild[i].Name != build[i].Name || expectedBuild[i].Version.NE(build[i].Version.Version) {
+			t.Fatalf("build list != expected build list: got: %v, want: %v", build, expectedBuild)
+		}
+	}
+
+	if len(expectedMinimal) > 0 {
+		if len(expectedMinimal) != len(minimal) {
+			t.Fatalf("minimal list != expected minimal list: got: %v, want: %v", minimal, expectedMinimal)
+		}
+		for i := 0; i < len(expectedMinimal); i++ {
+			if expectedMinimal[i].Name != minimal[i].Name || expectedMinimal[i].Version.NE(minimal[i].Version.Version) {
+				t.Fatalf("minimal list != expected minimal list: got: %v, want: %v", minimal, expectedMinimal)
+			}
 		}
 	}
 }
