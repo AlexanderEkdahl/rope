@@ -114,7 +114,6 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 	// Keep track of all unbounded dependencies so that they can be added
 	// to the minimal requirement list to ensure reproduceable builds
 	unspecified := make(map[string]bool)
-	// replace this with simple recursive loop?
 	var walk func(node)
 	walk = func(n node) {
 		if _, ok := cache[dependencyID(n.value)]; ok {
@@ -157,8 +156,10 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 	}
 	minimalDependencies := make(map[string]Dependency)
 	for _, d := range base {
-		d2 := Dependency{Name: d.Name, Version: max[normalizedPackageName(d.Name)]}
-		minimalDependencies[d.Name] = d2
+		minimalDependencies[d.Name] = Dependency{
+			Name:    d.Name,
+			Version: max[normalizedPackageName(d.Name)],
+		}
 		walk2(d)
 	}
 	for i := len(postorder) - 1; i >= 0; i-- {
@@ -168,12 +169,11 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 		}
 		if !have[n.value.Name] {
 			minimalDependencies[postorder[i].value.Name] = postorder[i].value
-			walk(n)
+			walk2(n.value)
 		}
 	}
 	// Finally add all unbounded versions to the minimal requirement list to ensure
 	// results are reproduceable when a new version get released.
-	// This should be revisited as I don't think it handles versions correctly
 	for name := range unspecified {
 		minimalDependencies[name] = buildDependencies[name].value
 	}
