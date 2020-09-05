@@ -33,14 +33,14 @@ func (d *Dependency) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	split := strings.Split(s, "-")
-	if len(split) != 2 {
+	sep := strings.LastIndex(s, "-")
+	if sep < 0 {
 		return fmt.Errorf("expected dependency to be in the form of <name>-<version>, got: '%s'", s)
 	}
-	d.Name = string(split[0])
+	d.Name = NormalizePackageName(string(s[:sep]))
 
 	var err error
-	d.Version, err = version.Parse(split[1])
+	d.Version, err = version.Parse(s[sep+1:])
 	if err != nil {
 		return fmt.Errorf("dependency version not valid semver: %w", err)
 	}
@@ -49,5 +49,8 @@ func (d *Dependency) UnmarshalJSON(b []byte) error {
 }
 
 func (d Dependency) MarshalJSON() ([]byte, error) {
+	if d.Version.Unspecified() {
+		return nil, fmt.Errorf("marshaling unspecified version for '%s'", d.Name)
+	}
 	return json.Marshal(fmt.Sprintf("%s-%s", d.Name, d.Version))
 }

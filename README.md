@@ -44,9 +44,14 @@ rope version
 The integration tests for rope runs the binary in a Python docker image verifying the installed dependencies work correctly.
 
 ```
-docker build -t rope_integration -f Dockerfile-integration . && docker run --rm rope_integration:latest -test.v
+docker build -t rope_integration -f Dockerfile-integration . && docker run --rm rope_integration -test.v
 ```
 
+Debug rope interactively in a consistent environment:
+
+```
+docker build -t rope_integration -f Dockerfile-integration . && docker run --rm -it --entrypoint /bin/bash rope_integration
+```
 
 ## Links
 
@@ -61,30 +66,33 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 
 ### TODO
 
+- Return the most compatible version if multiple version are available.
+    - `rope install numpy` downloads 2 versions of numpy(due to unstable package selection)
+    - `rope install six` downloads a sdist and a wheel(due to unstable package selection)
 - Parallelize version selection/installation process.
 - Support for platform specific wheels across all platforms supported by Python
+- Cache directory and packages directory should have a version appended.
 - Written package folders should be write protected to prevent inadvertendly changing files for other projects/users(match go modules)
 - Demonstrate how rope can be used with Docker
-- If the ropefile listed all architectures that all dependencies must resolve for it can ensure upfront that it is possible
 - Top-level version exclusions: https://research.swtch.com/vgo-mvs
 - Support extras e.g. `pip install urllib3[secure]`
 - Support `pip -f` flag to build dependencies from other sources.
 - Install missing packages when using commands other than `add`
 - Support a mode where it will not write to the ropefile and fail any command that tries to do so.
 - Somehow store the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
-- Investigate why it needs network when doing for example: `rope add tensorflow` twice in a row
 - Top-level replace directive for developing local packages.
-- If a package depends on an unspecified version it should not lead to the latest version being installed if another package depends on a specific minimal version(this can be implemented by updating the reduce method to not pick <latest> over a specific version *unless* the latest requirement comes from the top-level package)
-- Support --no-binary packag installs
 - Verify files have not been tampered with using the RECORD
 - Windows support
-- Integration tests against data pulled through public BigQuery dataset
-- Integration tests against top-N python packages.
 - Support specified Python version
-- Use https://warehouse.pypa.io/api-reference/json/ for faster dependency search
+- Use https://warehouse.pypa.io/api-reference/json/ for faster(?) dependency search with additional metadata.
 - GitHub Actions release process
-- Return the most compatible version if multiple version are available.
 - Fix issues with partial files being downloaded.
 - Ensure all packages found at https://johnfraney.ca/posts/2019/11/19/pipenv-poetry-benchmarks-ergonomics-2/ can be installed.
 - Version should just be a plain string so that it can be used as the key in dictionary. Or anything comparable.
 - Fix issues with partially downloaded artifacts(Rename them/verify/delete if still corrupted)
+- Implement support for https://www.python.org/dev/peps/pep-0314/ as a fast path for extracting dependencies from sdist
+- If the ropefile listed all architectures that all dependencies must resolve for it can ensure upfront that it is possible
+- Warn users about explicit incompatabilities(`rope show`)
+- Support --no-binary package installs
+- `rope install pytz>=2017.2` installs the latest version of `pytz` not `2017.2`
+- `rope export` is taking longer than it should. Is it doing network calls?

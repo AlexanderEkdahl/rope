@@ -3,16 +3,22 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
-	"github.com/AlexanderEkdahl/rope/pep508"
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
@@ -45,7 +51,7 @@ func ParseWheelFilename(filename string) (WheelFilename, error) {
 	}
 
 	return WheelFilename{
-		Name:          split[0],
+		Name:          NormalizePackageName(split[0]),
 		Version:       split[1],
 		Build:         build,
 		PythonVersion: split[len(split)-3],
@@ -151,19 +157,18 @@ func compatibleCPUArchitecture(platform, goarch string) bool {
 }
 
 // https://pythonwheels.com
+// TODO: Merge this and WheelFilename?
 type Wheel struct {
-	name     string
+	name     string // Canonical name
 	filename string
 	version  version.Version
-	url      string // Only set when found in package manager?
+
+	url string // Only set when found in package manager?
 
 	dependencies []Dependency
 }
 
 func (p *Wheel) Name() string {
-	// Currently working on the casing of name differs from request version
-	// to the found version. This should be resolved by using the index
-	// lookup as the source of truth
 	return p.name
 }
 
@@ -175,38 +180,35 @@ func (p *Wheel) Dependencies() []Dependency {
 	return p.dependencies
 }
 
-func (p *Wheel) Install(ctx context.Context) error {
-	if err := p.download(ctx); err != nil {
-		return err
-	}
-
-	cache, err := GetCacheDir()
+// Install installs the wheel and returns the path to the installaction location.
+func (p *Wheel) Install(ctx context.Context) (string, error) {
+	path, err := p.download(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return ExtractWheel(filepath.Join(cache, p.filename))
+	return InstallWheel(path)
 }
 
-func ExtractWheel(path string) error {
-	filename := filepath.Base(path)
+// TODO: Move this method into Wheel.Install(and have sdist embed a Wheel after it has been installed)
+func InstallWheel(whlPath string) (string, error) {
+	filename := filepath.Base(whlPath)
 
-	// TODO: os.UserCacheDir()
-	installPath := fmt.Sprintf("./ropedir/packages/%s", strings.TrimSuffix(filename, ".whl"))
-
+	// TODO: os.UserCacheDir() or UserConfigDir?
+	installPath := filepath.Join("./ropedir", "0", strings.TrimSuffix(filename, ".whl"))
 	if _, err := os.Stat(installPath); errors.Is(err, os.ErrNotExist) {
 		// continue with installation
 	} else if err != nil {
-		return err
+		return "", err
 	} else {
-		// fmt.Println("package already installed: 🧩")
-		return nil
+		return installPath, nil
 	}
+	fmt.Println("installing wheel: ", filename)
 
 	// TODO: Verify files as they are being read
-	whlFile, err := zip.OpenReader(path)
+	whlFile, err := zip.OpenReader(whlPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer whlFile.Close()
 
@@ -214,7 +216,7 @@ func ExtractWheel(path string) error {
 		// TODO: Use Record to read files and verify SHA256
 		f, err := file.Open()
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		if file.FileInfo().IsDir() {
@@ -227,93 +229,113 @@ func ExtractWheel(path string) error {
 		target := filepath.Join(installPath, file.Name)
 		// TODO: Final directory should be created with 0500
 		if err := os.MkdirAll(filepath.Dir(target), 0777); err != nil {
-			return err
+			return "", err
 		}
 
-		// TODO: Write-protected files prevents users from inadvertendly modifying its
+		// Write-protected files prevents users from inadvertendly modifying its
 		// dependencies and thereby affecing other projects.
 		dst, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0444)
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		if _, err := io.Copy(dst, f); err != nil {
-			return err
+			return "", err
 		}
 
 		if err := f.Close(); err != nil {
-			return err
+			return "", err
 		}
 	}
 
-	return nil
+	// TODO: Make this atomic in the event of concurrent installs?
+	return installPath, nil
 }
 
 // download fetches the package if not in cache.
-func (p *Wheel) download(ctx context.Context) error {
+func (p *Wheel) download(ctx context.Context) (string, error) {
 	cache, err := GetCacheDir()
 	if err != nil {
-		return err
+		return "", err
 	}
-	path := filepath.Join(cache, p.filename)
+	cachePath := filepath.Join(cache, "wheel", p.name, p.filename)
 
 	// Check that it is the correct file?
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(cachePath); errors.Is(err, os.ErrNotExist) {
 		// download file
 	} else if err != nil {
-		return err
+		return "", err
 	} else if err == nil {
 		// fmt.Printf("Found cache for %s\n", p.filename)
-		return nil
+		return cachePath, nil
+	}
+	fmt.Printf("Downloading %s\n", p.filename)
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0777); err != nil {
+		return "", err
 	}
 
-	fmt.Printf("Downloading %s\n", p.filename)
-
-	// TODO: Figure out correct permissions
-	// if err := os.MkdirAll("./ropedir/cache", 777); err != nil {
-	// 	return fmt.Errorf("creating cache directory: %w", err)
-	// }
+	parsedURL, err := url.Parse(p.url)
+	if err != nil {
+		return "", err
+	}
+	values, err := url.ParseQuery(parsedURL.Fragment)
+	if err != nil {
+		return "", err
+	}
 
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	res, err := http.DefaultClient.Do(r)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer res.Body.Close()
 
-	// TODO: check 200-status
+	if res.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed HTTP request: %s", res.Status)
+	}
 
-	file, err := os.Create(path)
+	// TODO: Make this atomic in case of failures/interruptions
+	file, err := os.Create(cachePath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer file.Close()
 
-	// TODO: Verify download
-	_, err = io.Copy(file, res.Body)
-	if err != nil {
-		return err
+	var sum []byte
+	var hash hash.Hash
+	var reader io.Reader = res.Body
+	if len(values["sha256"]) > 0 {
+		var err error
+		sum, err = hex.DecodeString(values["sha256"][0])
+		if err != nil {
+			return "", fmt.Errorf("sha256 checksum invalid hex: %w", err)
+		}
+		hash = sha256.New()
+		reader = io.TeeReader(res.Body, hash)
 	}
 
-	return file.Close()
+	_, err = io.Copy(file, reader)
+	if err != nil {
+		return "", err
+	}
+
+	if len(sum) > 0 && !bytes.Equal(sum, hash.Sum(nil)) {
+		return "", fmt.Errorf("checksum mismatch, got: %x, expected: %x", hash.Sum(nil), sum)
+	}
+
+	return cachePath, file.Close()
 }
 
 func (p *Wheel) extractDependencies(ctx context.Context) error {
-	if err := p.download(ctx); err != nil {
-		return err
-	}
-
-	cache, err := GetCacheDir()
+	path, err := p.download(ctx)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(cache, p.filename)
 
-	// TODO: Verify files as they are being read
 	whlFile, err := zip.OpenReader(path)
 	if err != nil {
 		return err
@@ -321,24 +343,26 @@ func (p *Wheel) extractDependencies(ctx context.Context) error {
 	defer whlFile.Close()
 
 	dependencies := []Dependency{}
-	foundMetadata := false
+	var metadata *zip.File
 	for _, file := range whlFile.File {
+		// TODO: Verify contents of METADATA by also reading RECORD
 		if filepath.Base(file.Name) == "METADATA" {
-			foundMetadata = true
-
-			metadata, err := file.Open()
-			if err != nil {
-				return err
-			}
-			dependencies, err = p.extractDependenciesFromMetadata(metadata)
-			metadata.Close()
-			if err != nil {
-				return fmt.Errorf("extracting dependencies from METADATA: %w", err)
-			}
+			metadata = file
+			break
 		}
 	}
-	if !foundMetadata {
+	if metadata == nil {
 		return fmt.Errorf("METADATA file not found in .whl")
+	}
+	metadataFile, err := metadata.Open()
+	if err != nil {
+		return err
+	}
+	defer metadataFile.Close()
+
+	dependencies, err = p.extractDependenciesFromMetadata(metadataFile)
+	if err != nil {
+		return fmt.Errorf("extracting dependencies from METADATA: %w", err)
 	}
 
 	p.dependencies = dependencies
@@ -352,18 +376,19 @@ func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependenc
 	for scanner.Scan() {
 		row := scanner.Text()
 		if strings.HasPrefix(row, "Requires-Dist: ") {
+			// Remove split as it is being handled by ParseDependencySpecification
 			split := strings.Split(strings.TrimPrefix(row, "Requires-Dist: "), ";")
 			if len(split) > 1 {
 				// fmt.Printf("skipping dependency: '%s'\n", row)
 				continue
 			}
-			dep, err := pep508.ParseDependency(split[0])
+			dep, err := version.ParseDependencySpecification(split[0])
 			if err != nil {
 				return nil, err
 			}
 
 			dependencies = append(dependencies, Dependency{
-				Name:    dep.DistributionName,
+				Name:    NormalizePackageName(dep.DistributionName),
 				Version: version.Minimal(dep.Versions),
 			})
 		}
@@ -373,4 +398,42 @@ func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependenc
 	}
 
 	return dependencies, nil
+}
+
+// findCachedWheel searches the wheel cache to see if there is a wheel already
+// built that is compatible with the current environment.
+// Note: name is expected to be normalized
+func findCachedWheel(name string, v version.Version) (string, error) {
+	if v.Unspecified() {
+		// If version is not specified then a new version may have
+		// been released and it should check upstream index.
+		return "", nil
+	}
+
+	cache, err := GetCacheDir()
+	if err != nil {
+		return "", err
+	}
+
+	dir := filepath.Join(cache, "wheel", name)
+	wheels, err := ioutil.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+
+	for _, wheel := range wheels {
+		fi, err := ParseWheelFilename(wheel.Name())
+		if err != nil {
+			return "", err
+		}
+
+		// TODO: Proper version equality check
+		if fi.Version == v.String() && fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+			return filepath.Join(dir, wheel.Name()), nil
+		}
+	}
+
+	return "", nil
 }

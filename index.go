@@ -18,7 +18,7 @@ import (
 
 // Defalt constants for the Python Package index.
 const (
-	PythonPackageIndex = "https://pypi.python.org/"
+	PythonPackageIndex = "https://pypi.python.org"
 	DefaultIndex       = PythonPackageIndex + "/simple"
 )
 
@@ -74,7 +74,7 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 	}
 
 	if foundPackage == nil {
-		r, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", i.url, name), nil)
+		r, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s/", i.url, name), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -85,8 +85,14 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 		}
 		defer res.Body.Close()
 
-		// TODO: Check non 200
-		// TODO: Verify checksum
+		switch res.StatusCode {
+		case http.StatusOK:
+			// continue
+		case http.StatusNotFound:
+			return nil, ErrPackageNotFound
+		default:
+			return nil, fmt.Errorf("failed HTTP request: %s", res.Status)
+		}
 
 		dec := xml.NewDecoder(res.Body)
 		for {
@@ -108,6 +114,13 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 				p, ok := i.checkCompatability(href)
 				if ok {
 					// If no version is specified find the latest compatible version
+					// TODO: This is unstable as it may select a different version depending on
+					// whether or not looking for the latest version or the same version but
+					// specified explicitly.
+					// For example in the case of https://pypi.org/simple/six/ the <latest> is
+					// six-1.15.0.tar.gz but six==1.15.0 is six-1.15.0-py2.py3-none-any.whl
+					// Must implement version selection preference to ensure the same variant
+					// is being selected.
 					if v.EQ(semver.Version{}) {
 						foundPackage = p
 					} else if p.Version().GTE(v.Version) {
@@ -126,7 +139,7 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 	}
 
 	if foundPackage == nil {
-		return nil, fmt.Errorf("package %q not found in %q", name, fmt.Sprintf("%s/%s", i.url, name))
+		return nil, ErrPackageNotFound
 	}
 
 	if wheel, ok := foundPackage.(*Wheel); ok {
@@ -149,7 +162,6 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 	case strings.HasSuffix(filename, ".whl"):
 		fi, err := ParseWheelFilename(filename)
 		if err != nil {
-			// fmt.Println("debug_err", err)
 			return nil, false
 		}
 
@@ -159,7 +171,6 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 
 		v, err := version.Parse(fi.Version)
 		if err != nil {
-			// fmt.Println("debug_err", "invalid semver", err)
 			return nil, false
 		}
 
@@ -184,6 +195,10 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 	case strings.HasSuffix(filename, ".zip"):
 		fallthrough
 	case strings.HasSuffix(filename, ".rpm"):
+		return nil, false
+	case strings.HasSuffix(filename, ".tar.bz2"):
+		return nil, false
+	case strings.HasSuffix(filename, ".tgz"):
 		return nil, false
 	default:
 		fmt.Println("unknown distribution type:", filename)

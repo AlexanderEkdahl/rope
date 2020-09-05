@@ -4,47 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
-var PackageNotFoundErr = errors.New("package not found")
+var ErrPackageNotFound = errors.New("package not found")
 
 type Package interface {
+	// Name must be normalized in its canonical form
 	Name() string
 	Version() version.Version
+	// Dependency names must be normalized in its canonical form
 	Dependencies() []Dependency
-	Install(context.Context) error
+	Install(context.Context) (string, error)
 }
 
 type PackageIndex interface {
 	FindPackage(ctx context.Context, name string, v version.Version) (Package, error)
-}
-
-// Normalize package names.
-// https://www.python.org/dev/peps/pep-0503/#normalized-names
-var normalizationRe = regexp.MustCompile(`[-_.]+`)
-
-func normalizedPackageName(name string) string {
-	return strings.ToLower(normalizationRe.ReplaceAllString(name, "-"))
-}
-
-func normalizeDependencies(ds []Dependency) []Dependency {
-	ret := make([]Dependency, len(ds))
-	for i, d := range ds {
-		ret[i] = Dependency{
-			Name:    normalizedPackageName(d.Name),
-			Version: d.Version,
-		}
-	}
-	return ret
-}
-
-func dependencyID(d Dependency) string {
-	return normalizedPackageName(d.Name) + d.Version.String()
 }
 
 // MinimalVersionSelection recursively visits every dependency's dependencies and builds
@@ -79,7 +56,7 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 	visited := make(map[string]struct{})
 	buildDependencies := make(map[string]node)
 
-	work := append([]Dependency{}, normalizeDependencies(base)...)
+	work := append([]Dependency{}, base...)
 	for len(work) > 0 {
 		d := work[len(work)-1]
 		work = work[:len(work)-1]
@@ -90,19 +67,20 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 		}
 
 		// TODO: This specialized logic should be moved into an abstraction(Reqs.Max)
-		if v, ok := buildDependencies[normalizedPackageName(p.Name())]; !ok || replace(v.value, p.Version(), d.Version.Unspecified()) {
-			buildDependencies[normalizedPackageName(p.Name())] = node{
+		if v, ok := buildDependencies[p.Name()]; !ok || replace(v.value, p.Version(), d.Version.Unspecified()) {
+			buildDependencies[p.Name()] = node{
 				value:        Dependency{p.Name(), p.Version(), d.Version.Unspecified()},
-				dependencies: normalizeDependencies(p.Dependencies()),
+				dependencies: p.Dependencies(),
 			}
 		}
 
 		for _, d := range p.Dependencies() {
-			if _, ok := visited[dependencyID(d)]; ok {
+			dependencyID := d.Name + d.Version.String()
+			if _, ok := visited[dependencyID]; ok {
 				// prevent cycles
 				continue
 			}
-			visited[dependencyID(d)] = struct{}{}
+			visited[dependencyID] = struct{}{}
 
 			work = append(work, d)
 		}
@@ -116,10 +94,11 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 	unspecified := make(map[string]bool)
 	var walk func(node)
 	walk = func(n node) {
-		if _, ok := cache[dependencyID(n.value)]; ok {
+		dependencyID := n.value.Name + n.value.Version.String()
+		if _, ok := cache[dependencyID]; ok {
 			return
 		}
-		cache[dependencyID(n.value)] = n.dependencies
+		cache[dependencyID] = n.dependencies
 		if n.value.Unspecified {
 			unspecified[n.value.Name] = true
 		}
@@ -135,12 +114,13 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 	have := map[string]bool{}
 	var walk2 func(Dependency)
 	walk2 = func(d Dependency) {
-		if have[dependencyID(d)] {
+		dependencyID := d.Name + d.Version.String()
+		if have[dependencyID] {
 			return
 		}
-		have[dependencyID(d)] = true
+		have[dependencyID] = true
 
-		for _, d := range cache[dependencyID(d)] {
+		for _, d := range cache[dependencyID] {
 			walk2(d)
 		}
 	}
@@ -156,9 +136,13 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 	}
 	minimalDependencies := make(map[string]Dependency)
 	for _, d := range base {
+		v, ok := max[d.Name]
+		if !ok {
+			panic(fmt.Sprintf("mistake: could not find '%s' in max", d.Name))
+		}
 		minimalDependencies[d.Name] = Dependency{
 			Name:    d.Name,
-			Version: max[normalizedPackageName(d.Name)],
+			Version: v,
 		}
 		walk2(d)
 	}
@@ -170,6 +154,7 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 		if !have[n.value.Name] {
 			minimalDependencies[postorder[i].value.Name] = postorder[i].value
 			walk2(n.value)
+			panic("this never happens?")
 		}
 	}
 	// Finally add all unbounded versions to the minimal requirement list to ensure

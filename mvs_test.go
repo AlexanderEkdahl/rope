@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/AlexanderEkdahl/rope/version"
@@ -15,8 +14,7 @@ type testPackageIndex struct {
 
 func (pi *testPackageIndex) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
 	var foundPackage Package
-	// TODO: Any normalization done here should move into index/Package abstraction
-	for _, p := range pi.index[strings.ToLower(name)] {
+	for _, p := range pi.index[name] {
 		if v.Equals(semver.Version{}) {
 			foundPackage = p
 			// Keep searching as there may be another package with a higher
@@ -27,7 +25,7 @@ func (pi *testPackageIndex) FindPackage(ctx context.Context, name string, v vers
 	}
 
 	if foundPackage == nil {
-		return nil, PackageNotFoundErr
+		return nil, ErrPackageNotFound
 	}
 
 	return foundPackage, nil
@@ -51,15 +49,15 @@ func (p testPackage) Dependencies() []Dependency {
 	return p.dependencies
 }
 
-func (p testPackage) Install(context.Context) error {
-	return nil
+func (p testPackage) Install(context.Context) (string, error) {
+	return "", nil
 }
 
 func TestVersionSelection(t *testing.T) {
 	// Dependency graph taken from: https://research.swtch.com/vgo-mvs
 	index := &testPackageIndex{
 		map[string][]testPackage{
-			"b": {
+			"B": {
 				{
 					name:    "B",
 					version: version.MustParse("1.1.0"),
@@ -81,7 +79,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"c": {
+			"C": {
 				{
 					name:    "C",
 					version: version.MustParse("1.1.0"),
@@ -107,7 +105,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"d": {
+			"D": {
 				{
 					name:    "D",
 					version: version.MustParse("1.1.0"),
@@ -149,7 +147,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"e": {
+			"E": {
 				{
 					name:    "E",
 					version: version.MustParse("1.1.0"),
@@ -163,7 +161,7 @@ func TestVersionSelection(t *testing.T) {
 					version: version.MustParse("1.3.0"),
 				},
 			},
-			"f": {
+			"F": {
 				{
 					name:    "F",
 					version: version.MustParse("1.1.0"),
@@ -175,7 +173,7 @@ func TestVersionSelection(t *testing.T) {
 					},
 				},
 			},
-			"g": {
+			"G": {
 				{
 					name:    "G",
 					version: version.MustParse("1.1.0"),

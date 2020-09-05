@@ -1,16 +1,15 @@
-package pep508
+package version
 
 import (
 	"fmt"
 	"strings"
 	"text/scanner"
 	"unicode"
-
-	"github.com/AlexanderEkdahl/rope/version"
 )
 
 /*
-Full Parsley specification
+Full Parsley specification for parsing the dependency specification.
+Parsing is described in detail at: https://www.python.org/dev/peps/pep-0508/
 
 	wsp            = ' ' | '\t'
 	version_cmp    = wsp* <'<=' | '<' | '!=' | '==' | '>=' | '>' | '~=' | '==='>
@@ -118,51 +117,38 @@ Full Parsley specification
 	hexdig        = digit | 'a' | 'A' | 'b' | 'B' | 'c' | 'C' | 'd' | 'D' | 'e' | 'E' | 'f' | 'F'
 */
 
-type PEP508Dependency struct {
+// ErrURLNotSupported is returned when a URL is encountered in the dependency
+// specification. However, URLs are not allowed when specifying dependants.
+var ErrURLNotSupported = fmt.Errorf("url not supported")
+
+type DependencySpecification struct {
 	DistributionName string
-	Versions         []version.VersionRequirement
+	Versions         []VersionRequirement
 	Extras           []string
 	// EnvironmentMarkers []string
 }
 
-type PEP508Version struct {
-	Operator string
-	Version  string
-}
-
-func identifier(ch rune, i int) bool {
+func dependencyIdentifier(ch rune, i int) bool {
 	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || (ch == '-' || ch == '_' || ch == '.') && i > 0
 }
 
-func versionIdentifier(ch rune, i int) bool {
-	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '*' || ch == '+' || ch == '!'
-}
-
-func scanVersionSpec(s *scanner.Scanner) ([]version.VersionRequirement, error) {
+func scanVersionSpec(s *scanner.Scanner) ([]VersionRequirement, error) {
 	parentheses := false
 	if s.Peek() == '(' {
 		parentheses = true
 		s.Next()
 	}
-	versions, err := version.ScanVersionRequirements(s)
+	versions, err := ScanVersionRequirements(s)
 	if err != nil {
 		return nil, err
 	}
 
 	if parentheses && s.Next() != ')' {
-		return nil, fmt.Errorf("expected closing parentheses in version spec")
+		return nil, fmt.Errorf("expected closing parenthesis after opening parenthesis in version spec")
 	}
 
 	return versions, nil
 }
-
-func skipWhitespace(s *scanner.Scanner) {
-	for s.Whitespace&(1<<uint(s.Peek())) != 0 {
-		s.Next()
-	}
-}
-
-var ErrUrlNotSupported = fmt.Errorf("url not supported")
 
 func scanExtras(s *scanner.Scanner) ([]string, error) {
 	s.Next()
@@ -185,19 +171,49 @@ func scanExtras(s *scanner.Scanner) ([]string, error) {
 	}
 }
 
-// ParseDependency parse a dependency according to PEP508
-// https://www.python.org/dev/peps/pep-0508/
-// TODO: Download a complete list of Requires-Dist rows through the publicly
-// available BigQuery list.
-func ParseDependency(input string) (*PEP508Dependency, error) {
-	d := &PEP508Dependency{}
+var ErrUnknownEnvironmentMarker = fmt.Errorf("unknown environment marker")
+
+// TODO: Implement the full expression language supported and evaluate it.
+func scanEnvironmentMarkers(s *scanner.Scanner) ([]string, error) {
+	skipWhitespace(s)
+	s.IsIdentRune = func(ch rune, i int) bool {
+		return unicode.IsLetter(ch)
+	}
+
+	if s.Scan() == scanner.Ident && s.TokenText() == "extra" {
+		if s.TokenText() == "extra" {
+			skipWhitespace(s)
+			if s.Next() != '=' {
+				return nil, ErrUnknownEnvironmentMarker
+			}
+			if s.Next() != '=' {
+				return nil, ErrUnknownEnvironmentMarker
+			}
+			skipWhitespace(s)
+			if r := s.Next(); r != '"' && r != '\'' {
+				return nil, ErrUnknownEnvironmentMarker
+			}
+			if s.Scan() == scanner.Ident {
+				return []string{s.TokenText()}, nil
+			}
+		}
+	}
+
+	return nil, ErrUnknownEnvironmentMarker
+}
+
+// ParseDependencySpecification parse a dependency according to PEP 508.
+// Read more: https://www.python.org/dev/peps/pep-0508/
+// Split lexing and parsing to simplify the implementation.
+func ParseDependencySpecification(input string) (*DependencySpecification, error) {
+	d := &DependencySpecification{}
 
 	s := &scanner.Scanner{}
 	s.Init(strings.NewReader(input))
 	s.Mode = scanner.ScanIdents
 	s.Whitespace = 1<<'\t' | 1<<' '
 
-	s.IsIdentRune = identifier
+	s.IsIdentRune = dependencyIdentifier
 	if s.Scan() == scanner.EOF {
 		return nil, fmt.Errorf("expected package identifer, got EOF")
 	}
@@ -221,7 +237,14 @@ func ParseDependency(input string) (*PEP508Dependency, error) {
 			return nil, err
 		}
 	case '@':
-		return nil, ErrUrlNotSupported
+		return nil, ErrURLNotSupported
+	case ';':
+		s.Next()
+		extras, err := scanEnvironmentMarkers(s)
+		if err != nil {
+			return nil, err
+		}
+		d.Extras = append(extras)
 	}
 
 	return d, nil

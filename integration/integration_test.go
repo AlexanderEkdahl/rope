@@ -84,7 +84,9 @@ func TestCLI(t *testing.T) {
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "tensorflow==2.2.0"},
+					// TODO: Figure out why a specific version of setuptools is required (used to not be the case).
+					// https://github.com/pypa/setuptools/issues/2353
+					args:             []string{"install", "tensorflow==2.2.0", "setuptools==49.6.0"},
 					expectedExitCode: 0,
 				},
 			},
@@ -103,6 +105,7 @@ func TestCLI(t *testing.T) {
 				},
 			},
 			verification: `import urllib3; import botocore`,
+			slow:         true,
 		},
 		"install with weird casing": {
 			steps: []step{
@@ -116,6 +119,36 @@ func TestCLI(t *testing.T) {
 				},
 			},
 			verification: `import numpy`,
+		},
+		// pendulum==1.4.4 provides a tar archive without directory entries.
+		// and python-dateutil poses name normalization challenges.
+		"install pendulum": {
+			steps: []step{
+				{
+					args:             []string{"init"},
+					expectedExitCode: 0,
+				},
+				{
+					args:             []string{"install", "python-dateutil", "pendulum==1.4.4", "six", "pytzdata"},
+					expectedExitCode: 0,
+				},
+			},
+			verification: `import pendulum`,
+		},
+		// markdown is distributed as 'Markdown'
+		// TODO: Figure out why 'importlib_metadata' is required
+		"install markdown": {
+			steps: []step{
+				{
+					args:             []string{"init"},
+					expectedExitCode: 0,
+				},
+				{
+					args:             []string{"install", "markdown", "importlib_metadata"},
+					expectedExitCode: 0,
+				},
+			},
+			verification: `import markdown`,
 		},
 	}
 	for name, tc := range testCases {

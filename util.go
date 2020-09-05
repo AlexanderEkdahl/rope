@@ -7,10 +7,19 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
-
-	"github.com/AlexanderEkdahl/rope/version"
+	"regexp"
+	"strings"
 )
+
+// Normalize package names.
+var normalizationRe = regexp.MustCompile(`[-_.]+`)
+
+// NormalizePackageName normalizes the package name.
+//
+// https://www.python.org/dev/peps/pep-0503/#normalized-names
+func NormalizePackageName(name string) string {
+	return strings.ToLower(normalizationRe.ReplaceAllString(name, "-"))
+}
 
 // ReadRopefile finds and reads the rope.json file by recursively
 // looking in the parent directory starting from the current working
@@ -49,8 +58,7 @@ func WriteRopefile(p *Project, path string) error {
 		return err
 	}
 
-	// TODO: TODO: Sync?
-	return ioutil.WriteFile(path, bytes, 0666)
+	return ioutil.WriteFile(path, append(bytes, []byte{'\n'}...), 0666)
 }
 
 var ErrRopefileNotFound = fmt.Errorf("rope.json not found (or in any of the parent directories)")
@@ -87,42 +95,11 @@ func GetCacheDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cacheDir := filepath.Join(userCacheDir, "rope", "cache")
+	cacheDir := filepath.Join(userCacheDir, "rope")
 
 	if err := os.MkdirAll(cacheDir, 0777); err != nil {
 		return "", fmt.Errorf("failed to created cache directory: %w", err)
 	}
 
 	return cacheDir, nil
-}
-
-// FindCachedWheel searches the wheel cache to see if there is a wheel already built
-// and compatible with the current environment.
-func FindCachedWheel(name string, v version.Version) (string, error) {
-	if v.Unspecified() {
-		return "", nil
-	}
-
-	cache, err := GetCacheDir()
-	if err != nil {
-		return "", err
-	}
-
-	matches, err := filepath.Glob(filepath.Join(cache, "%s-%s-*.whl"))
-	if err != nil {
-		return "", err
-	}
-
-	for _, match := range matches {
-		fi, err := ParseWheelFilename(filepath.Base(match))
-		if err != nil {
-			return "", err
-		}
-
-		if fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-			return match, nil
-		}
-	}
-
-	return "", nil
 }

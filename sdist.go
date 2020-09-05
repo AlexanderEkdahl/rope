@@ -18,20 +18,23 @@ import (
 )
 
 func ParseSdistFilename(filename string) (*Sdist, error) {
-	split := strings.Split(strings.TrimSuffix(filename, ".tar.gz"), "-")
-	if len(split) != 2 {
+	// TODO: Support more sdist formats
+	sep := strings.LastIndex(filename, "-")
+	if sep < 0 {
 		return nil, fmt.Errorf("expected sdist .tar.gz file to <name>-<version>.tar.gz, got: %s", filename)
 	}
+	versionString := strings.TrimSuffix(filename, ".tar.gz")[sep+1:]
 
-	v, err := version.Parse(split[1])
+	v, err := version.Parse(versionString)
 	if err != nil {
-		return nil, fmt.Errorf("invalid semver: %v(%s)", split[1], err)
+		return nil, fmt.Errorf("invalid semver: %v(%s)", versionString, err)
 	}
 
 	return &Sdist{
-		name:     split[0],
-		filename: filename,
+		name:     NormalizePackageName(filename[:sep]),
 		version:  v,
+		filename: filename,
+		suffix:   ".tar.gz",
 	}, nil
 }
 
@@ -40,14 +43,13 @@ func ParseSdistFilename(filename string) (*Sdist, error) {
 // distributing binary packages.
 //
 // Installing sdist packages requires invoking the Python
-// interpreter.
+// interpreter which may in turn execute arbitary code.
 type Sdist struct {
 	url      string
-	name     string
-	filename string
+	name     string // Canonical name
 	version  version.Version
-
-	wheel *Wheel
+	filename string
+	suffix   string // TODO: Support other suffixes for source distributions.
 }
 
 // Name returns the canonical name of the source distribution package.
@@ -72,77 +74,74 @@ const setuptoolsShim = `import sys, setuptools, tokenize; sys.argv[0] = 'setup.p
 // Install extracts the source distribution and invokes the Python interpreter to
 // run a shim around setuptools to create a Python wheel package. If successful
 // the wheel is then installed.
-func (s *Sdist) Install(ctx context.Context) error {
+func (s *Sdist) Install(ctx context.Context) (string, error) {
 	// Check if there is already a built source distribution available.
-	cachedWheel, err := FindCachedWheel(s.name, s.version)
+	cachedWheel, err := findCachedWheel(s.name, s.version)
 	if err != nil {
-		return err
+		return "", err
 	} else if cachedWheel != "" {
-		return ExtractWheel(cachedWheel)
+		return InstallWheel(cachedWheel)
 	}
-	fmt.Printf("💩 installing: %s-%s %s\n", s.name, s.version, s.url)
+	fmt.Println("installing sdist: ", s.filename)
 
 	file, err := s.fetch(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer file.Close()
 
 	tmp, err := ioutil.TempDir("", fmt.Sprintf("%s-%s-*", s.name, s.version))
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.RemoveAll(tmp)
 
 	gzipReader, err := gzip.NewReader(file)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer gzipReader.Close()
 
-	tarRoot := ""
 	tr := tar.NewReader(gzipReader)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return fmt.Errorf("reading tar header: %w", err)
+			return "", fmt.Errorf("reading tar header: %w", err)
 		}
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.Mkdir(filepath.Join(tmp, hdr.Name), 0755); err != nil {
-				return err
-			}
-
-			if tarRoot == "" {
-				tarRoot = filepath.Join(tmp, hdr.Name)
-			}
+			// Some tar files are somehow built without directory entries so
+			// these can not be relied upon.
 		case tar.TypeReg:
+			// TODO: Final directory should be created with 0500
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(tmp, hdr.Name)), 0777); err != nil {
+				return "", err
+			}
 			out, err := os.Create(filepath.Join(tmp, hdr.Name))
 			if err != nil {
-				return err
+				return "", err
 			}
 			if _, err := io.Copy(out, tr); err != nil {
 				out.Close()
-				return err
+				return "", err
 			}
 			if err := out.Close(); err != nil {
-				return err
+				return "", err
 			}
-		default:
-			fmt.Println("unexpect tar type:", hdr.Typeflag)
 		}
 	}
-
-	fmt.Println("untared to:", tmp)
+	tarRoot := filepath.Join(tmp, strings.TrimSuffix(s.filename, s.suffix))
+	if _, err := os.Stat(tarRoot); errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("invalid source distribution: expected %s to exist after extraction", tarRoot)
+	}
 
 	wheelPath := filepath.Join(tmp, "wheel")
 	installCmd := exec.CommandContext(
 		ctx,
 		"python3",
-		"-u",
 		"-c",
 		setuptoolsShim,
 		"bdist_wheel",
@@ -157,29 +156,50 @@ func (s *Sdist) Install(ctx context.Context) error {
 	output, err := installCmd.CombinedOutput()
 	if err != nil {
 		fmt.Println(string(output))
-		return err
+		return "", err
 	}
+
+	// Implement this logic(or reading PKG-INFO) in Dependencies
+	// {
+	// 	requiresCmd := exec.CommandContext(
+	// 		ctx,
+	// 		"python3",
+	// 		"-c",
+	// 		setuptoolsShim,
+	// 		"--requires",
+	// 	)
+	// 	requiresCmd.Dir = tarRoot
+	// 	requiresCmd.Env = append(os.Environ(), "PYTHONPATH=")
+	// 	output, err := requiresCmd.CombinedOutput()
+	// 	fmt.Printf("Output of requires: %s", string(output))
+	// 	if err != nil {
+	// 		return "", err
+	// 	}
+	// }
 
 	matches, err := filepath.Glob(filepath.Join(wheelPath, "*.whl"))
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(matches) != 1 {
-		return fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
+		return "", fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
 	}
 
-	// Move binary distribution to cache.
+	// Move wheel to wheel cache
 	cache, err := GetCacheDir()
 	if err != nil {
-		return err
+		return "", err
 	}
-	cachedPath := filepath.Join(cache, filepath.Base(matches[0]))
-
-	if err := os.Rename(matches[0], cachedPath); err != nil {
-		return err
+	cachePath := filepath.Join(cache, "wheel", s.name, filepath.Base(matches[0]))
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0777); err != nil {
+		return "", err
 	}
 
-	return ExtractWheel(cachedPath)
+	if err := os.Rename(matches[0], cachePath); err != nil {
+		return "", err
+	}
+
+	return InstallWheel(cachePath)
 }
 
 func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
@@ -187,9 +207,12 @@ func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(cache, s.filename)
+	cachePath := filepath.Join(cache, "sdist", s.filename)
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0777); err != nil {
+		return nil, err
+	}
 
-	file, err := os.Open(path)
+	file, err := os.Open(cachePath)
 	if errors.Is(err, os.ErrNotExist) {
 		// proceed to downloading file
 	} else if err != nil {
@@ -213,7 +236,7 @@ func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
 
 	// TODO: check 200-status
 
-	file, err = os.Create(path)
+	file, err = os.Create(cachePath)
 	if err != nil {
 		return nil, err
 	}
@@ -231,5 +254,5 @@ func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
 
 	// TODO: Instead of closing the file do file.Seek(0)
 
-	return os.Open(path)
+	return os.Open(cachePath)
 }

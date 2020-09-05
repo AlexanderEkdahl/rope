@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/AlexanderEkdahl/rope/pep508"
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
@@ -20,12 +20,19 @@ func install(timeout time.Duration, packages []string) error {
 	}
 
 	project, err := ReadRopefile()
-	if err != nil {
+	ropefilePath := ""
+	if errors.Is(err, ErrRopefileNotFound) {
+		project = &Project{Dependencies: []Dependency{}}
+		ropefilePath = "rope.json"
+	} else if err != nil {
 		return err
 	}
 
+	index := &Index{
+		url: DefaultIndex,
+	}
 	for _, p := range packages {
-		d, err := pep508.ParseDependency(p)
+		d, err := version.ParseDependencySpecification(p)
 		if err != nil {
 			return err
 		}
@@ -39,18 +46,16 @@ func install(timeout time.Duration, packages []string) error {
 			version = d.Versions[0].Version
 		}
 
-		// TODO: This should search for the packages on the index to make sure
-		// the name/version exists. The inputs to MinimalVersionSelection should
-		// not have to deal with normalizing names.
+		p, err := index.FindPackage(ctx, d.DistributionName, version)
+		if err != nil {
+			return fmt.Errorf("fetching '%s-%s': %w", d.DistributionName, version, err)
+		}
 		project.Dependencies = append(project.Dependencies, Dependency{
-			Name:    d.DistributionName,
-			Version: version,
+			Name:    p.Name(),
+			Version: p.Version(),
 		})
 	}
 
-	index := &Index{
-		url: DefaultIndex,
-	}
 	list, minimalRequirements, err := MinimalVersionSelection(ctx, project.Dependencies, index)
 	if err != nil {
 		return fmt.Errorf("failed version selection: %w", err)
@@ -63,11 +68,11 @@ func install(timeout time.Duration, packages []string) error {
 		}
 
 		// TODO: This function need to find the package AGAIN? doesn't make sense
-		if err := p.Install(ctx); err != nil {
+		if _, err := p.Install(ctx); err != nil {
 			return fmt.Errorf("installing '%s-%s': %w", d.Name, d.Version, err)
 		}
 	}
 
 	project.Dependencies = minimalRequirements
-	return WriteRopefile(project, "")
+	return WriteRopefile(project, ropefilePath)
 }
