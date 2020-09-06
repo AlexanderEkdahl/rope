@@ -67,8 +67,8 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 ### TODO
 
 - Return the most compatible version if multiple version are available.
-    - `rope install numpy` downloads 2 versions of numpy(due to unstable package selection)
-    - `rope install six` downloads a sdist and a wheel(due to unstable package selection)
+    - `rope add numpy` downloads 2 versions of numpy(due to unstable package selection)
+    - `rope add six` downloads a sdist and a wheel(due to unstable package selection)
 - Parallelize version selection/installation process.
 - Support for platform specific wheels across all platforms supported by Python
 - Cache directory and packages directory should have a version appended.
@@ -94,5 +94,5 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - If the ropefile listed all architectures that all dependencies must resolve for it can ensure upfront that it is possible
 - Warn users about explicit incompatabilities(`rope show`)
 - Support --no-binary package installs
-- `rope install pytz>=2017.2` installs the latest version of `pytz` not `2017.2`
+- `rope add pytz>=2017.2` installs the latest version of `pytz` not `2017.2`
 - `rope export` is taking longer than it should. Is it doing network calls?

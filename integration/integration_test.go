@@ -37,47 +37,47 @@ func TestCLI(t *testing.T) {
 				},
 			},
 		},
-		"install numpy": {
+		"numpy": {
 			steps: []step{
 				{
 					args:             []string{"init"},
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "numpy==1.15"},
+					args:             []string{"add", "numpy==1.15"},
 					expectedExitCode: 0,
 				},
 			},
 			verification: `import numpy; numpy.zeros([1,5])`,
 		},
-		"install wrapt": {
+		"wrapt": {
 			steps: []step{
 				{
 					args:             []string{"init"},
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "wrapt"},
+					args:             []string{"add", "wrapt"},
 					expectedExitCode: 0,
 				},
 			},
 			verification: `import wrapt`,
 		},
-		"install torch": {
+		"torch": {
 			steps: []step{
 				{
 					args:             []string{"init"},
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "torch"},
+					args:             []string{"add", "torch"},
 					expectedExitCode: 0,
 				},
 			},
 			verification: `import torch; torch.tensor([1.0,2.0,3.0]).softmax(-1)`,
 			slow:         true,
 		},
-		"install tensorflow": {
+		"tensorflow": {
 			steps: []step{
 				{
 					args:             []string{"init"},
@@ -86,35 +86,35 @@ func TestCLI(t *testing.T) {
 				{
 					// TODO: Figure out why a specific version of setuptools is required (used to not be the case).
 					// https://github.com/pypa/setuptools/issues/2353
-					args:             []string{"install", "tensorflow==2.2.0", "setuptools==49.6.0"},
+					args:             []string{"add", "tensorflow==2.2.0", "setuptools==49.6.0"},
 					expectedExitCode: 0,
 				},
 			},
 			verification: `import tensorflow`,
 			slow:         true,
 		},
-		"install urllib3 and botocore": {
+		"urllib3 and botocore": {
 			steps: []step{
 				{
 					args:             []string{"init"},
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "urllib3", "botocore"},
+					args:             []string{"add", "urllib3", "botocore"},
 					expectedExitCode: 0,
 				},
 			},
 			verification: `import urllib3; import botocore`,
 			slow:         true,
 		},
-		"install with weird casing": {
+		"with weird casing": {
 			steps: []step{
 				{
 					args:             []string{"init"},
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "nUmPy"},
+					args:             []string{"add", "nUmPy"},
 					expectedExitCode: 0,
 				},
 			},
@@ -122,14 +122,14 @@ func TestCLI(t *testing.T) {
 		},
 		// pendulum==1.4.4 provides a tar archive without directory entries.
 		// and python-dateutil poses name normalization challenges.
-		"install pendulum": {
+		"pendulum": {
 			steps: []step{
 				{
 					args:             []string{"init"},
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "python-dateutil", "pendulum==1.4.4", "six", "pytzdata"},
+					args:             []string{"add", "python-dateutil", "pendulum==1.4.4", "six", "pytzdata"},
 					expectedExitCode: 0,
 				},
 			},
@@ -137,14 +137,14 @@ func TestCLI(t *testing.T) {
 		},
 		// markdown is distributed as 'Markdown'
 		// TODO: Figure out why 'importlib_metadata' is required
-		"install markdown": {
+		"markdown": {
 			steps: []step{
 				{
 					args:             []string{"init"},
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"install", "markdown", "importlib_metadata"},
+					args:             []string{"add", "markdown", "importlib_metadata"},
 					expectedExitCode: 0,
 				},
 			},

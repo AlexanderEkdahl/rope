@@ -23,7 +23,7 @@ The commands are:
 
   run          run command with PYTHONPATH configured
   init         initializes a new rope project
-  install      installs and adds one or more dependencies
+  add          installs and adds one or more dependencies
   remove       removes one or more dependencies
   show         inspect the current dependencies
   export       export dependency specification
@@ -58,10 +58,10 @@ func run(args []string) (int, error) {
 			return 1, err
 		}
 		return 0, nil
-	case "add":
-		fmt.Println("did you mean: 'rope install'?")
-		return 2, nil
 	case "install":
+		fmt.Println("did you mean: 'rope add'?")
+		return 2, nil
+	case "add":
 		flagSet := pflag.NewFlagSet("install", pflag.ContinueOnError)
 		timeout := flagSet.Duration("timeout", 0, "Command timeout")
 		if err := flagSet.Parse(args[1:]); err == pflag.ErrHelp {
@@ -75,7 +75,7 @@ func run(args []string) (int, error) {
 		}
 		packages := flagSet.Args()[1:]
 
-		if err := install(*timeout, packages); err != nil {
+		if err := add(*timeout, packages); err != nil {
 			return 1, err
 		}
 		return 0, nil

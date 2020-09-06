@@ -11,7 +11,7 @@ import (
 
 // TODO: Add update parameter for when to use the latest version of transitive
 // dependency.
-func install(timeout time.Duration, packages []string) error {
+func add(timeout time.Duration, packages []string) error {
 	ctx := context.Background()
 	if timeout > 0 {
 		var cancel context.CancelFunc
