@@ -71,28 +71,25 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
     - `rope add six` downloads a sdist and a wheel(due to unstable package selection)
 - Parallelize version selection/installation process.
 - Support for platform specific wheels across all platforms supported by Python
-- Cache directory and packages directory should have a version appended.
 - Written package folders should be write protected to prevent inadvertendly changing files for other projects/users(match go modules)
 - Demonstrate how rope can be used with Docker
 - Top-level version exclusions: https://research.swtch.com/vgo-mvs
 - Support extras e.g. `pip install urllib3[secure]`
 - Support `pip -f` flag to build dependencies from other sources.
-- Install missing packages when using commands other than `add`
 - Support a mode where it will not write to the ropefile and fail any command that tries to do so.
 - Somehow store the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
+- Support specified Python version
 - Top-level replace directive for developing local packages.
 - Verify files have not been tampered with using the RECORD
 - Windows support
-- Support specified Python version
 - Use https://warehouse.pypa.io/api-reference/json/ for faster(?) dependency search with additional metadata.
 - GitHub Actions release process
-- Fix issues with partial files being downloaded.
 - Ensure all packages found at https://johnfraney.ca/posts/2019/11/19/pipenv-poetry-benchmarks-ergonomics-2/ can be installed.
-- Version should just be a plain string so that it can be used as the key in dictionary. Or anything comparable.
-- Fix issues with partially downloaded artifacts(Rename them/verify/delete if still corrupted)
-- Implement support for https://www.python.org/dev/peps/pep-0314/ as a fast path for extracting dependencies from sdist
 - If the ropefile listed all architectures that all dependencies must resolve for it can ensure upfront that it is possible
 - Warn users about explicit incompatabilities(`rope show`)
 - Support --no-binary package installs
 - `rope add pytz>=2017.2` installs the latest version of `pytz` not `2017.2`
 - `rope export` is taking longer than it should. Is it doing network calls?
+- Use a memory backed buffer for downloads(up to a point). Use BigQuery to find suitable limit
+- An alternative approach to creating an entry in PYTHONPATH for every dependency is to create an ephemeral directory with symlinks to every dependency.
+- `rope run bogus` fails without error.

@@ -32,11 +32,20 @@ The commands are:
   version      show rope version
 `
 
+// TODO: Figure out how to better interact with this.
+// Abstract methods that needs this type of interaction into its own type.
+var cache *Cache
+
+// Should move the main package into a cli folder and let the top-level package be 'rope'
+// Which can be directly used in the test harness.
 func run(args []string) (int, error) {
 	arg := ""
 	if len(args) > 1 {
 		arg = args[1]
 	}
+
+	cache = &Cache{}
+	defer cache.Close()
 
 	switch arg {
 	case "", "help", "--help", "-h":

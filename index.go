@@ -7,9 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
-	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/AlexanderEkdahl/rope/version"
@@ -30,109 +31,80 @@ type Index struct {
 }
 
 func (i *Index) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
-	var foundPackage Package
-
-	// Search the local cache if the version is specified
-	if v.NE(semver.Version{}) {
-		cache, err := GetCacheDir()
-		if err != nil {
-			return nil, err
+	// Search the local cache first
+	if wheel, err := cache.GetWheel(name, v); err != nil {
+		return nil, err
+	} else if cacheOnly, _ := strconv.ParseBool(os.Getenv("ROPE_CACHE_ONLY")); cacheOnly && wheel == nil {
+		return nil, fmt.Errorf("package not found in cache (ROPE_CACHE_ONLY is set)")
+	} else if wheel != nil {
+		// TODO: Packages found in the cache should also include dependencies
+		if err := wheel.extractDependencies(ctx); err != nil {
+			return nil, fmt.Errorf("extracting dependencies: %w", err)
 		}
 
-		// TODO: Cache must be keyed on the package index or it risks getting the wrong package
-		matches, err := filepath.Glob(filepath.Join(cache, fmt.Sprintf("%s-%s*", name, v)))
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO: Ensure matches are of the right python/arch
-		for _, match := range matches {
-			filename := path.Base(match)
-			if strings.HasSuffix(filename, ".whl") {
-				fi, err := ParseWheelFilename(filename)
-				if err != nil {
-					return nil, err
-				}
-
-				if fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-					foundPackage = &Wheel{
-						name:     fi.Name,
-						filename: filename,
-						version:  v,
-					}
-					break
-				}
-			} else if strings.HasSuffix(filename, ".tar.gz") {
-				sdist, err := ParseSdistFilename(filename)
-				if err != nil {
-					return nil, err
-				}
-				foundPackage = sdist
-				break
-			}
-		}
+		return wheel, nil
 	}
 
-	if foundPackage == nil {
-		r, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s/", i.url, name), nil)
-		if err != nil {
+	// TODO: Normalize request to avoid redirect?
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s/", i.url, name), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	switch res.StatusCode {
+	case http.StatusOK:
+		// continue
+	case http.StatusNotFound:
+		return nil, ErrPackageNotFound
+	default:
+		return nil, fmt.Errorf("failed HTTP request: %s", res.Status)
+	}
+
+	var foundPackage Package
+	dec := xml.NewDecoder(res.Body)
+	for {
+		token, err := dec.Token()
+		if err == io.EOF {
+			break
+		} else if err != nil {
 			return nil, err
 		}
 
-		res, err := http.DefaultClient.Do(r)
-		if err != nil {
-			return nil, err
-		}
-		defer res.Body.Close()
-
-		switch res.StatusCode {
-		case http.StatusOK:
-			// continue
-		case http.StatusNotFound:
-			return nil, ErrPackageNotFound
-		default:
-			return nil, fmt.Errorf("failed HTTP request: %s", res.Status)
-		}
-
-		dec := xml.NewDecoder(res.Body)
-		for {
-			token, err := dec.Token()
-			if err == io.EOF {
-				break
-			} else if err != nil {
-				return nil, err
+		if token, ok := token.(xml.StartElement); ok && token.Name.Local == "a" {
+			href := ""
+			for _, attr := range token.Attr {
+				if attr.Name.Local == "href" {
+					href = attr.Value
+				}
 			}
 
-			if token, ok := token.(xml.StartElement); ok && token.Name.Local == "a" {
-				href := ""
-				for _, attr := range token.Attr {
-					if attr.Name.Local == "href" {
-						href = attr.Value
-					}
-				}
+			p, ok := i.checkCompatability(href)
+			if ok {
+				// If no version is specified find the latest compatible version
+				// TODO: This is unstable as it may select a different version depending on
+				// whether or not looking for the latest version or the same version but
+				// specified explicitly.
+				// For example in the case of https://pypi.org/simple/six/ the <latest> is
+				// six-1.15.0.tar.gz but six==1.15.0 is six-1.15.0-py2.py3-none-any.whl
+				// Must implement version selection preference to ensure the same variant
+				// is being selected.
+				if v.EQ(semver.Version{}) {
+					foundPackage = p
+				} else if p.Version().GTE(v.Version) {
+					// Finds the first compatible package. This may result in a higher version
+					// than requested.
+					// TODO: Investigate merits of this vs using Equals
 
-				p, ok := i.checkCompatability(href)
-				if ok {
-					// If no version is specified find the latest compatible version
-					// TODO: This is unstable as it may select a different version depending on
-					// whether or not looking for the latest version or the same version but
-					// specified explicitly.
-					// For example in the case of https://pypi.org/simple/six/ the <latest> is
-					// six-1.15.0.tar.gz but six==1.15.0 is six-1.15.0-py2.py3-none-any.whl
-					// Must implement version selection preference to ensure the same variant
-					// is being selected.
-					if v.EQ(semver.Version{}) {
-						foundPackage = p
-					} else if p.Version().GTE(v.Version) {
-						// Finds the first compatible package. This may result in a higher version
-						// than requested.
-						// TODO: Investigate merits of this vs using Equals
-
-						// Return early as the minimal version has been found(assumes index is ordered?) verify
-						// Investigate this to avoid pre-release versions etc(unless specifically requested?)
-						foundPackage = p
-						break
-					}
+					// Return early as the minimal version has been found(assumes index is ordered?) verify
+					// Investigate this to avoid pre-release versions etc(unless specifically requested?)
+					foundPackage = p
+					break
 				}
 			}
 		}
@@ -142,6 +114,23 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 		return nil, ErrPackageNotFound
 	}
 
+	// If the original query did not specify a version, check the cache to see if
+	// the found package is already present in the cache.
+	if v.Unspecified() {
+		if wheel, err := cache.GetWheel(name, foundPackage.Version()); err != nil {
+			return nil, err
+		} else if wheel != nil {
+			// TODO: Packages found in the cache should also include dependencies
+			if err := wheel.extractDependencies(ctx); err != nil {
+				return nil, fmt.Errorf("extracting dependencies: %w", err)
+			}
+
+			return wheel, nil
+		}
+	}
+
+	// Cache the result of this in a JSON file to speed up interactions.
+	// TODO: extract dependencies from source distributions as well.
 	if wheel, ok := foundPackage.(*Wheel); ok {
 		if err := wheel.extractDependencies(ctx); err != nil {
 			return nil, fmt.Errorf("extracting dependencies: %w", err)
@@ -169,15 +158,10 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 			return nil, false
 		}
 
-		v, err := version.Parse(fi.Version)
-		if err != nil {
-			return nil, false
-		}
-
 		return &Wheel{
 			name:     fi.Name,
 			filename: filename,
-			version:  v,
+			version:  fi.Version,
 			url:      href,
 		}, true
 	case strings.HasSuffix(filename, ".tar.gz"):
@@ -189,11 +173,11 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 
 		return sdist, true
 	case strings.HasSuffix(filename, ".egg"):
-		fallthrough
+		return nil, false
 	case strings.HasSuffix(filename, ".exe"):
-		fallthrough
+		return nil, false
 	case strings.HasSuffix(filename, ".zip"):
-		fallthrough
+		return nil, false
 	case strings.HasSuffix(filename, ".rpm"):
 		return nil, false
 	case strings.HasSuffix(filename, ".tar.bz2"):

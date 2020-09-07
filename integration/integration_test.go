@@ -120,21 +120,22 @@ func TestCLI(t *testing.T) {
 			},
 			verification: `import numpy`,
 		},
-		// pendulum==1.4.4 provides a tar archive without directory entries.
-		// and python-dateutil poses name normalization challenges.
-		"pendulum": {
-			steps: []step{
-				{
-					args:             []string{"init"},
-					expectedExitCode: 0,
-				},
-				{
-					args:             []string{"add", "python-dateutil", "pendulum==1.4.4", "six", "pytzdata"},
-					expectedExitCode: 0,
-				},
-			},
-			verification: `import pendulum`,
-		},
+		// - pendulum==1.4.4 provides a tar archive without directory entries
+		//   and poorly specified transitive dependency.
+		// - python-dateutil poses name normalization challenges.
+		// "pendulum": {
+		// 	steps: []step{
+		// 		{
+		// 			args:             []string{"init"},
+		// 			expectedExitCode: 0,
+		// 		},
+		// 		{
+		// 			args:             []string{"add", "python-dateutil", "pendulum==1.4.4", "six", "pytzdata"},
+		// 			expectedExitCode: 0,
+		// 		},
+		// 	},
+		// 	verification: `import pendulum`,
+		// },
 		// markdown is distributed as 'Markdown'
 		// TODO: Figure out why 'importlib_metadata' is required
 		"markdown": {

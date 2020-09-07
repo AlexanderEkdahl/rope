@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/AlexanderEkdahl/rope/version"
@@ -75,20 +76,13 @@ const setuptoolsShim = `import sys, setuptools, tokenize; sys.argv[0] = 'setup.p
 // run a shim around setuptools to create a Python wheel package. If successful
 // the wheel is then installed.
 func (s *Sdist) Install(ctx context.Context) (string, error) {
-	// Check if there is already a built source distribution available.
-	cachedWheel, err := findCachedWheel(s.name, s.version)
-	if err != nil {
-		return "", err
-	} else if cachedWheel != "" {
-		return InstallWheel(cachedWheel)
-	}
-	fmt.Println("installing sdist: ", s.filename)
+	fmt.Println("converting sdist:", s.filename)
 
-	file, err := s.fetch(ctx)
+	body, err := s.fetch(ctx)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer body.Close()
 
 	tmp, err := ioutil.TempDir("", fmt.Sprintf("%s-%s-*", s.name, s.version))
 	if err != nil {
@@ -96,7 +90,7 @@ func (s *Sdist) Install(ctx context.Context) (string, error) {
 	}
 	defer os.RemoveAll(tmp)
 
-	gzipReader, err := gzip.NewReader(file)
+	gzipReader, err := gzip.NewReader(body)
 	if err != nil {
 		return "", err
 	}
@@ -185,44 +179,32 @@ func (s *Sdist) Install(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
 	}
 
-	// Move wheel to wheel cache
-	cache, err := GetCacheDir()
+	filename := filepath.Base(matches[0])
+	fi, err := ParseWheelFilename(filename)
 	if err != nil {
 		return "", err
 	}
-	cachePath := filepath.Join(cache, "wheel", s.name, filepath.Base(matches[0]))
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0777); err != nil {
-		return "", err
+
+	if !fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+		return "", fmt.Errorf("built source distribution is incompatible")
 	}
 
-	if err := os.Rename(matches[0], cachePath); err != nil {
+	fmt.Println("caching", filename)
+	whl := &Wheel{
+		name:     fi.Name,
+		filename: filename,
+		version:  fi.Version,
+	}
+	cachedPath, err := cache.AddWheel(whl, matches[0])
+	if err != nil {
 		return "", err
 	}
+	whl.path = cachedPath
 
-	return InstallWheel(cachePath)
+	return whl.Install(ctx)
 }
 
-func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
-	cache, err := GetCacheDir()
-	if err != nil {
-		return nil, err
-	}
-	cachePath := filepath.Join(cache, "sdist", s.filename)
-	if err := os.MkdirAll(filepath.Dir(cachePath), 0777); err != nil {
-		return nil, err
-	}
-
-	file, err := os.Open(cachePath)
-	if errors.Is(err, os.ErrNotExist) {
-		// proceed to downloading file
-	} else if err != nil {
-		return nil, err
-	} else if err == nil {
-		return file, nil
-	}
-
-	fmt.Printf("Downloading %s\n", s.filename)
-
+func (s *Sdist) fetch(ctx context.Context) (io.ReadCloser, error) {
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, nil)
 	if err != nil {
 		return nil, err
@@ -232,27 +214,12 @@ func (s *Sdist) fetch(ctx context.Context) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 
-	// TODO: check 200-status
-
-	file, err = os.Create(cachePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	// TODO: Verify download
-	_, err = io.Copy(file, res.Body)
-	if err != nil {
-		return nil, err
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed HTTP request: %s", res.Status)
 	}
 
-	if err := file.Close(); err != nil {
-		return nil, err
-	}
+	// TODO: Verify checksum
 
-	// TODO: Instead of closing the file do file.Seek(0)
-
-	return os.Open(cachePath)
+	return res.Body, nil
 }
