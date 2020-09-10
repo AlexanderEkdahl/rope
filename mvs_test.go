@@ -60,21 +60,21 @@ func TestVersionSelection(t *testing.T) {
 			"B": {
 				{
 					name:    "B",
-					version: version.MustParse("1.1.0"),
+					version: version.MustParse("1.1"),
 					dependencies: []Dependency{
 						{
 							Name:    "D",
-							Version: version.MustParse("1.1.0"),
+							Version: version.MustParse("1.1"),
 						},
 					},
 				},
 				{
 					name:    "B",
-					version: version.MustParse("1.2.0"),
+					version: version.MustParse("1.2"),
 					dependencies: []Dependency{
 						{
 							Name:    "D",
-							Version: version.MustParse("1.3.0"),
+							Version: version.MustParse("1.3"),
 						},
 					},
 				},
@@ -82,25 +82,25 @@ func TestVersionSelection(t *testing.T) {
 			"C": {
 				{
 					name:    "C",
-					version: version.MustParse("1.1.0"),
+					version: version.MustParse("1.1"),
 				},
 				{
 					name:    "C",
-					version: version.MustParse("1.2.0"),
+					version: version.MustParse("1.2"),
 					dependencies: []Dependency{
 						{
 							Name:    "D",
-							Version: version.MustParse("1.4.0"),
+							Version: version.MustParse("1.4"),
 						},
 					},
 				},
 				{
 					name:    "C",
-					version: version.MustParse("1.3.0"),
+					version: version.MustParse("1.3"),
 					dependencies: []Dependency{
 						{
 							Name:    "F",
-							Version: version.MustParse("1.1.0"),
+							Version: version.MustParse("1.1"),
 						},
 					},
 				},
@@ -108,41 +108,41 @@ func TestVersionSelection(t *testing.T) {
 			"D": {
 				{
 					name:    "D",
-					version: version.MustParse("1.1.0"),
+					version: version.MustParse("1.1"),
 					dependencies: []Dependency{
 						{
 							Name:    "E",
-							Version: version.MustParse("1.1.0"),
+							Version: version.MustParse("1.1"),
 						},
 					},
 				},
 				{
 					name:    "D",
-					version: version.MustParse("1.2.0"),
+					version: version.MustParse("1.2"),
 					dependencies: []Dependency{
 						{
 							Name:    "E",
-							Version: version.MustParse("1.1.0"),
+							Version: version.MustParse("1.1"),
 						},
 					},
 				},
 				{
 					name:    "D",
-					version: version.MustParse("1.3.0"),
+					version: version.MustParse("1.3"),
 					dependencies: []Dependency{
 						{
 							Name:    "E",
-							Version: version.MustParse("1.2.0"),
+							Version: version.MustParse("1.2"),
 						},
 					},
 				},
 				{
 					name:    "D",
-					version: version.MustParse("1.4.0"),
+					version: version.MustParse("1.4"),
 					dependencies: []Dependency{
 						{
 							Name:    "E",
-							Version: version.MustParse("1.2.0"),
+							Version: version.MustParse("1.2"),
 						},
 					},
 				},
@@ -150,25 +150,25 @@ func TestVersionSelection(t *testing.T) {
 			"E": {
 				{
 					name:    "E",
-					version: version.MustParse("1.1.0"),
+					version: version.MustParse("1.1"),
 				},
 				{
 					name:    "E",
-					version: version.MustParse("1.2.0"),
+					version: version.MustParse("1.2"),
 				},
 				{
 					name:    "E",
-					version: version.MustParse("1.3.0"),
+					version: version.MustParse("1.3"),
 				},
 			},
 			"F": {
 				{
 					name:    "F",
-					version: version.MustParse("1.1.0"),
+					version: version.MustParse("1.1"),
 					dependencies: []Dependency{
 						{
 							Name:    "G",
-							Version: version.MustParse("1.1.0"),
+							Version: version.MustParse("1.1"),
 						},
 					},
 				},
@@ -176,11 +176,11 @@ func TestVersionSelection(t *testing.T) {
 			"G": {
 				{
 					name:    "G",
-					version: version.MustParse("1.1.0"),
+					version: version.MustParse("1.1"),
 					dependencies: []Dependency{
 						{
 							Name:    "F",
-							Version: version.MustParse("1.1.0"),
+							Version: version.MustParse("1.1"),
 						},
 					},
 				},
@@ -194,39 +194,39 @@ func TestVersionSelection(t *testing.T) {
 		[]Dependency{
 			{
 				Name:    "B",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "C",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 		},
 		[]Dependency{
 			{
 				Name:    "B",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "C",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "D",
-				Version: version.MustParse("1.4.0"),
+				Version: version.MustParse("1.4"),
 			},
 			{
 				Name:    "E",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 		},
 		[]Dependency{
 			{
 				Name:    "B",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "C",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 		},
 	)
@@ -237,47 +237,191 @@ func TestVersionSelection(t *testing.T) {
 		[]Dependency{
 			{
 				Name:    "B",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "C",
-				Version: version.MustParse("1.3.0"), // Leads to cyclical import
+				Version: version.MustParse("1.3"), // Leads to cyclical import
 			},
 		},
 		[]Dependency{
 			{
 				Name:    "B",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "C",
-				Version: version.MustParse("1.3.0"),
+				Version: version.MustParse("1.3"),
 			},
 			{
 				Name:    "D",
-				Version: version.MustParse("1.3.0"),
+				Version: version.MustParse("1.3"),
 			},
 			{
 				Name:    "E",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "F",
-				Version: version.MustParse("1.1.0"),
+				Version: version.MustParse("1.1"),
 			},
 			{
 				Name:    "G",
-				Version: version.MustParse("1.1.0"),
+				Version: version.MustParse("1.1"),
 			},
 		},
 		[]Dependency{
 			{
 				Name:    "B",
-				Version: version.MustParse("1.2.0"),
+				Version: version.MustParse("1.2"),
 			},
 			{
 				Name:    "C",
-				Version: version.MustParse("1.3.0"),
+				Version: version.MustParse("1.3"),
+			},
+		},
+	)
+}
+
+func TestVersionSelectionReduction(t *testing.T) {
+	// TODO: Fix this test
+	t.Skip()
+
+	// The following dependency tree tests the behaviour for when a transitive
+	// dependency should be dropped due to a different version being selected
+	// that no longer includes a dependency.
+	index := &testPackageIndex{
+		map[string][]testPackage{
+			"B": {
+				{
+					name:    "B",
+					version: version.MustParse("1.1"),
+					dependencies: []Dependency{
+						{
+							Name:    "D",
+							Version: version.MustParse("1.1"),
+						},
+					},
+				},
+				{
+					name:    "B",
+					version: version.MustParse("1.2"),
+					dependencies: []Dependency{
+						{
+							Name:    "D",
+							Version: version.MustParse("1.3"),
+						},
+					},
+				},
+			},
+			"C": {
+				{
+					name:    "C",
+					version: version.MustParse("1.1"),
+				},
+				{
+					name:    "C",
+					version: version.MustParse("1.2"),
+					dependencies: []Dependency{
+						{
+							Name:    "D",
+							Version: version.MustParse("1.4"),
+						},
+					},
+				},
+				{
+					name:    "C",
+					version: version.MustParse("1.3"),
+				},
+			},
+			"D": {
+				{
+					name:    "D",
+					version: version.MustParse("1.1"),
+					dependencies: []Dependency{
+						{
+							Name:    "E",
+							Version: version.MustParse("1.1"),
+						},
+					},
+				},
+				{
+					name:    "D",
+					version: version.MustParse("1.2"),
+					dependencies: []Dependency{
+						{
+							Name:    "E",
+							Version: version.MustParse("1.1"),
+						},
+					},
+				},
+				{
+					name:    "D",
+					version: version.MustParse("1.3"),
+					dependencies: []Dependency{
+						{
+							Name:    "E",
+							Version: version.MustParse("1.2"),
+						},
+					},
+				},
+				{
+					name:    "D",
+					version: version.MustParse("1.4"),
+				},
+			},
+			"E": {
+				{
+					name:    "E",
+					version: version.MustParse("1.1"),
+				},
+				{
+					name:    "E",
+					version: version.MustParse("1.2"),
+				},
+				{
+					name:    "E",
+					version: version.MustParse("1.3"),
+				},
+			},
+		},
+	}
+
+	verifyMinimalVersionSelection(
+		t,
+		index,
+		[]Dependency{
+			{
+				Name:    "B",
+				Version: version.MustParse("1.2"),
+			},
+			{
+				Name:    "C",
+				Version: version.MustParse("1.2"),
+			},
+		},
+		[]Dependency{
+			{
+				Name:    "B",
+				Version: version.MustParse("1.2"),
+			},
+			{
+				Name:    "C",
+				Version: version.MustParse("1.2"),
+			},
+			{
+				Name:    "D",
+				Version: version.MustParse("1.4"),
+			},
+		},
+		[]Dependency{
+			{
+				Name:    "B",
+				Version: version.MustParse("1.2"),
+			},
+			{
+				Name:    "C",
+				Version: version.MustParse("1.2"),
 			},
 		},
 	)
@@ -289,7 +433,7 @@ func TestVersionSelectionTransitiveUnbounded(t *testing.T) {
 			"torch": {
 				{
 					name:    "torch",
-					version: version.MustParse("1.6.0"),
+					version: version.MustParse("1.6"),
 					dependencies: []Dependency{
 						{
 							Name: "numpy",
@@ -300,11 +444,11 @@ func TestVersionSelectionTransitiveUnbounded(t *testing.T) {
 			"tensorflow": {
 				{
 					name:    "tensorflow",
-					version: version.MustParse("2.3.0"),
+					version: version.MustParse("2.3"),
 					dependencies: []Dependency{
 						{
 							Name:    "numpy",
-							Version: version.MustParse("1.14.0"),
+							Version: version.MustParse("1.14"),
 						},
 					},
 				},
@@ -312,15 +456,15 @@ func TestVersionSelectionTransitiveUnbounded(t *testing.T) {
 			"numpy": {
 				{
 					name:    "numpy",
-					version: version.MustParse("1.13.0"),
+					version: version.MustParse("1.13"),
 				},
 				{
 					name:    "numpy",
-					version: version.MustParse("1.14.0"),
+					version: version.MustParse("1.14"),
 				},
 				{
 					name:    "numpy",
-					version: version.MustParse("1.15.0"),
+					version: version.MustParse("1.15"),
 				},
 			},
 		},
@@ -343,25 +487,25 @@ func TestVersionSelectionTransitiveUnbounded(t *testing.T) {
 				// Version selection should not blindly select the latest version in case of
 				// a transitive dependency not specifying a version at all.
 				// 1.14.0 is the highest lower bound specified by any transitive dependency.
-				Version: version.MustParse("1.14.0"),
+				Version: version.MustParse("1.14"),
 			},
 			{
 				Name:    "tensorflow",
-				Version: version.MustParse("2.3.0"),
+				Version: version.MustParse("2.3"),
 			},
 			{
 				Name:    "torch",
-				Version: version.MustParse("1.6.0"),
+				Version: version.MustParse("1.6"),
 			},
 		},
 		[]Dependency{
 			{
 				Name:    "tensorflow",
-				Version: version.MustParse("2.3.0"),
+				Version: version.MustParse("2.3"),
 			},
 			{
 				Name:    "torch",
-				Version: version.MustParse("1.6.0"),
+				Version: version.MustParse("1.6"),
 			},
 		},
 	)
@@ -373,7 +517,7 @@ func TestVersionSelectionUnboundedReproduceable(t *testing.T) {
 			"torch": {
 				{
 					name:    "torch",
-					version: version.MustParse("1.6.0"),
+					version: version.MustParse("1.6"),
 					dependencies: []Dependency{
 						{
 							Name: "numpy",
@@ -384,7 +528,7 @@ func TestVersionSelectionUnboundedReproduceable(t *testing.T) {
 			"numpy": {
 				{
 					name:    "numpy",
-					version: version.MustParse("1.19.0"),
+					version: version.MustParse("1.19"),
 				},
 				{
 					name:    "numpy",
@@ -401,7 +545,7 @@ func TestVersionSelectionUnboundedReproduceable(t *testing.T) {
 		},
 		{
 			Name:    "torch",
-			Version: version.MustParse("1.6.0"),
+			Version: version.MustParse("1.6"),
 		},
 	}
 	verifyMinimalVersionSelection(

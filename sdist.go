@@ -46,11 +46,16 @@ func ParseSdistFilename(filename string) (*Sdist, error) {
 // Installing sdist packages requires invoking the Python
 // interpreter which may in turn execute arbitary code.
 type Sdist struct {
-	url      string
 	name     string // Canonical name
 	version  version.Version
 	filename string
 	suffix   string // TODO: Support other suffixes for source distributions.
+
+	// url is only set when the package was found in a remote package repository.
+	url string
+
+	// Wheel built from source distribituion
+	wheel *Wheel
 }
 
 // Name returns the canonical name of the source distribution package.
@@ -59,10 +64,24 @@ func (s *Sdist) Name() string { return s.name }
 // Version returns the canonical version of the source distribution package.
 func (s *Sdist) Version() version.Version { return s.version }
 
-// Dependencies is supposed to return the dependencies of this package.
-// This is not implemented yet as it requires invoking the Python interpreter.
+// Dependencies returns the transitive dependencies of this package. The only
+// reliable way of extra
 func (s *Sdist) Dependencies() []Dependency {
-	// TODO: Implement `python3 setup.py --requires`
+	// if s.wheel == nil {
+	// 	panic("sdist dependencies: wheel not built")
+	// }
+
+	// return s.wheel.dependencies
+	return nil
+}
+
+func (s *Sdist) extractDependencies(ctx context.Context) error {
+	// if s.wheel == nil {
+	// 	if err := s.convert(ctx); err != nil {
+	// 		return fmt.Errorf("converting sdist to wheel: %w", err)
+	// 	}
+	// }
+
 	return nil
 }
 
@@ -72,27 +91,26 @@ func (s *Sdist) Dependencies() []Dependency {
 // https://github.com/pypa/pip/blob/9cbe8fbdd0a1bd1bd4e483c9c0a556e9910ef8bb/src/pip/_internal/utils/setuptools_build.py#L14-L20
 const setuptoolsShim = `import sys, setuptools, tokenize; sys.argv[0] = 'setup.py'; __file__='setup.py';f=getattr(tokenize, 'open', open)(__file__);code=f.read().replace('\\r\\n', '\\n');f.close();exec(compile(code, __file__, 'exec'))`
 
-// Install extracts the source distribution and invokes the Python interpreter to
-// run a shim around setuptools to create a Python wheel package. If successful
-// the wheel is then installed.
-func (s *Sdist) Install(ctx context.Context) (string, error) {
+// convert uses `setuptools` to build a binary distribution from
+// a source distribution.
+func (s *Sdist) convert(ctx context.Context) error {
 	fmt.Println("converting sdist:", s.filename)
 
 	body, err := s.fetch(ctx)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer body.Close()
 
 	tmp, err := ioutil.TempDir("", fmt.Sprintf("%s-%s-*", s.name, s.version))
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer os.RemoveAll(tmp)
 
 	gzipReader, err := gzip.NewReader(body)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer gzipReader.Close()
 
@@ -102,7 +120,7 @@ func (s *Sdist) Install(ctx context.Context) (string, error) {
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return "", fmt.Errorf("reading tar header: %w", err)
+			return fmt.Errorf("reading tar header: %w", err)
 		}
 
 		switch hdr.Typeflag {
@@ -112,24 +130,24 @@ func (s *Sdist) Install(ctx context.Context) (string, error) {
 		case tar.TypeReg:
 			// TODO: Final directory should be created with 0500
 			if err := os.MkdirAll(filepath.Dir(filepath.Join(tmp, hdr.Name)), 0777); err != nil {
-				return "", err
+				return err
 			}
 			out, err := os.Create(filepath.Join(tmp, hdr.Name))
 			if err != nil {
-				return "", err
+				return err
 			}
 			if _, err := io.Copy(out, tr); err != nil {
 				out.Close()
-				return "", err
+				return err
 			}
 			if err := out.Close(); err != nil {
-				return "", err
+				return err
 			}
 		}
 	}
 	tarRoot := filepath.Join(tmp, strings.TrimSuffix(s.filename, s.suffix))
 	if _, err := os.Stat(tarRoot); errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("invalid source distribution: expected %s to exist after extraction", tarRoot)
+		return fmt.Errorf("invalid source distribution: expected %s to exist after extraction", tarRoot)
 	}
 
 	wheelPath := filepath.Join(tmp, "wheel")
@@ -150,58 +168,59 @@ func (s *Sdist) Install(ctx context.Context) (string, error) {
 	output, err := installCmd.CombinedOutput()
 	if err != nil {
 		fmt.Println(string(output))
-		return "", err
+		return err
 	}
-
-	// Implement this logic(or reading PKG-INFO) in Dependencies
-	// {
-	// 	requiresCmd := exec.CommandContext(
-	// 		ctx,
-	// 		"python3",
-	// 		"-c",
-	// 		setuptoolsShim,
-	// 		"--requires",
-	// 	)
-	// 	requiresCmd.Dir = tarRoot
-	// 	requiresCmd.Env = append(os.Environ(), "PYTHONPATH=")
-	// 	output, err := requiresCmd.CombinedOutput()
-	// 	fmt.Printf("Output of requires: %s", string(output))
-	// 	if err != nil {
-	// 		return "", err
-	// 	}
-	// }
 
 	matches, err := filepath.Glob(filepath.Join(wheelPath, "*.whl"))
 	if err != nil {
-		return "", err
+		return err
 	}
 	if len(matches) != 1 {
-		return "", fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
+		return fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
 	}
 
 	filename := filepath.Base(matches[0])
 	fi, err := ParseWheelFilename(filename)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	if !fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-		return "", fmt.Errorf("built source distribution is incompatible")
+		return fmt.Errorf("built source distribution is incompatible")
 	}
 
-	fmt.Println("caching", filename)
+	// Cache resulting wheel
 	whl := &Wheel{
 		name:     fi.Name,
 		filename: filename,
 		version:  fi.Version,
+
+		path: matches[0],
+	}
+	if err := whl.extractDependencies(ctx); err != nil {
+		return fmt.Errorf("failed extracting dependencies from built wheel: %w", err)
 	}
 	cachedPath, err := cache.AddWheel(whl, matches[0])
 	if err != nil {
-		return "", err
+		return err
 	}
 	whl.path = cachedPath
 
-	return whl.Install(ctx)
+	s.wheel = whl
+	return nil
+}
+
+// Install extracts the source distribution and invokes the Python interpreter to
+// run a shim around setuptools to create a Python wheel package. If successful
+// the wheel is then installed.
+func (s *Sdist) Install(ctx context.Context) (string, error) {
+	if s.wheel == nil {
+		if err := s.convert(ctx); err != nil {
+			return "", fmt.Errorf("converting sdist to wheel: %w", err)
+		}
+	}
+
+	return s.wheel.Install(ctx)
 }
 
 func (s *Sdist) fetch(ctx context.Context) (io.ReadCloser, error) {

@@ -378,16 +378,17 @@ func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependenc
 		row := scanner.Text()
 		if strings.HasPrefix(row, "Requires-Dist: ") {
 			// Remove split as it is being handled by ParseDependencySpecification
-			split := strings.Split(strings.TrimPrefix(row, "Requires-Dist: "), ";")
-			if len(split) > 1 {
-				// fmt.Printf("skipping dependency: '%s'\n", row)
+			dep, err := version.ParseDependencySpecification(strings.TrimPrefix(row, "Requires-Dist: "))
+			if err != nil {
+				// fmt.Printf("💀 %s(%v)\n", row, err)
 				continue
 			}
-			dep, err := version.ParseDependencySpecification(split[0])
-			if err != nil {
-				return nil, err
+			if len(dep.Extras) > 0 {
+				// fmt.Printf("💀 %s(extras)\n", row)
+				continue
 			}
 
+			// fmt.Printf("🍀 %s(minimal = %s)\n", row, version.Minimal(dep.Versions))
 			dependencies = append(dependencies, Dependency{
 				Name:    NormalizePackageName(dep.DistributionName),
 				Version: version.Minimal(dep.Versions),

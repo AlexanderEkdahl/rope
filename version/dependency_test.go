@@ -124,6 +124,11 @@ func TestParseDependencySpecifications(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			`functools32 (>=3.2.3) ; python_version < "3"`,
+			DependencySpecification{},
+			ErrUnknownEnvironmentMarker,
+		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.input, func(t *testing.T) {

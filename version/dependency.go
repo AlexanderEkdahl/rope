@@ -247,5 +247,15 @@ func ParseDependencySpecification(input string) (*DependencySpecification, error
 		d.Extras = append(extras)
 	}
 
+	skipWhitespace(s)
+	if s.Peek() == ';' {
+		s.Next()
+		extras, err := scanEnvironmentMarkers(s)
+		if err != nil {
+			return nil, err
+		}
+		d.Extras = append(extras)
+	}
+
 	return d, nil
 }

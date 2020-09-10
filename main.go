@@ -122,7 +122,7 @@ func run(args []string) (int, error) {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
-			return 1, nil
+			return 1, err
 		}
 		if err := cmd.Wait(); err != nil {
 			return cmd.ProcessState.ExitCode(), nil

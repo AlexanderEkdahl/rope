@@ -131,11 +131,11 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 
 	// Cache the result of this in a JSON file to speed up interactions.
 	// TODO: extract dependencies from source distributions as well.
-	if wheel, ok := foundPackage.(*Wheel); ok {
-		if err := wheel.extractDependencies(ctx); err != nil {
-			return nil, fmt.Errorf("extracting dependencies: %w", err)
-		}
-	}
+	// if p, ok := foundPackage.(interface{ extractDependencies(context.Context) error }); ok {
+	// 	if err := p.extractDependencies(ctx); err != nil {
+	// 		return nil, fmt.Errorf("extracting dependencies: %w", err)
+	// 	}
+	// }
 
 	return foundPackage, nil
 }

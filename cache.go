@@ -81,12 +81,16 @@ func (c *Cache) GetWheel(name string, v version.Version) (*Wheel, error) {
 				return nil, err
 			}
 
+			if fi.Version.NE(v.Version) {
+				continue
+			}
+
 			if fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
 				fmt.Printf("✅\n")
 				return &Wheel{
 					name:     fi.Name,
 					filename: filename,
-					version:  v,
+					version:  fi.Version,
 
 					path: filepath.Join(dir, filename),
 				}, nil

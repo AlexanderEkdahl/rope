@@ -58,31 +58,65 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 
 	work := append([]Dependency{}, base...)
 	for len(work) > 0 {
-		d := work[len(work)-1]
-		work = work[:len(work)-1]
+		// To avoid having to convert sdists uneccessarly the algorithm could keep 2 lists.
+		// One for wheel packages and its transitive dependencies and another for sdists.
+		// The list of wheel packages will be exhausted before source distributions.
+		//
+		// The algorithm should not explore versions that have already been excluded
+		// due to a newer version being found. It should also not explore versions
+		// that have been excluded due to no longer being reachable.
+		//
+		// If the dependency graph is explore in bread-first-order(it is assumed that
+		// deeper transitive dependencies imposes lower minimum bounds) two separate
+		// queues are maintained. One for fast binary distributions and another
+		// for slower source distributions. The expectation is that the faster binary
+		// distributions will eliminate having to even download the source distributions.
+
+		// Breadth first search to eliminate having to download/build very old versions of transitive dependencies.
+		d := work[0]
+		work = work[1:]
 
 		p, err := index.FindPackage(ctx, d.Name, d.Version)
 		if err != nil {
 			return nil, nil, fmt.Errorf("finding package '%s-%s': %w", d.Name, d.Version, err)
 		}
 
-		// TODO: This specialized logic should be moved into an abstraction(Reqs.Max)
 		if v, ok := buildDependencies[p.Name()]; !ok || replace(v.value, p.Version(), d.Version.Unspecified()) {
+			// if ok {
+			// 	fmt.Printf("🧩🧩🧩 replacing %s-%s with %s-%s\n", v.value.Name, v.value.Version, d.Name, d.Version)
+			// }
+			if p, ok := p.(interface{ extractDependencies(context.Context) error }); ok {
+				if err := p.extractDependencies(ctx); err != nil {
+					return nil, nil, fmt.Errorf("extracting dependencies: %w", err)
+				}
+			}
+
 			buildDependencies[p.Name()] = node{
 				value:        Dependency{p.Name(), p.Version(), d.Version.Unspecified()},
 				dependencies: p.Dependencies(),
 			}
-		}
 
-		for _, d := range p.Dependencies() {
-			dependencyID := d.Name + d.Version.String()
-			if _, ok := visited[dependencyID]; ok {
-				// prevent cycles
-				continue
+			for _, d := range p.Dependencies() {
+				dependencyID := d.Name + d.Version.String()
+				if _, ok := visited[dependencyID]; ok {
+					// prevent cycles
+					continue
+				}
+				visited[dependencyID] = struct{}{}
+
+				work = append(work, d)
 			}
-			visited[dependencyID] = struct{}{}
+		}
+	}
 
-			work = append(work, d)
+	max := map[string]version.Version{}
+	for name, node := range buildDependencies {
+		if v, ok := max[name]; ok {
+			if node.value.Version.GT(v.Version) {
+				max[name] = node.value.Version
+			}
+		} else {
+			max[name] = node.value.Version
 		}
 	}
 
@@ -122,16 +156,6 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 
 		for _, d := range cache[dependencyID] {
 			walk2(d)
-		}
-	}
-	max := map[string]version.Version{}
-	for name, node := range buildDependencies {
-		if v, ok := max[name]; ok {
-			if node.value.Version.GT(v.Version) {
-				max[name] = node.value.Version
-			}
-		} else {
-			max[name] = node.value.Version
 		}
 	}
 	minimalDependencies := make(map[string]Dependency)

@@ -2,6 +2,10 @@
 
 Experimental package manager for Python.
 
+- Parallel downloads and package installation
+- Optimized for Docker
+- Fast version selection algorithm
+
 ## Usage
 
 ``` bash
@@ -92,4 +96,6 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - `rope export` is taking longer than it should. Is it doing network calls?
 - Use a memory backed buffer for downloads(up to a point). Use BigQuery to find suitable limit
 - An alternative approach to creating an entry in PYTHONPATH for every dependency is to create an ephemeral directory with symlinks to every dependency.
-- `rope run bogus` fails without error.
+- Support PEP517 builds for projects that support it.
+- Attempt to extract sdist dependencies from PKG-INFO
+- Cache sdist downloads
