@@ -7,7 +7,19 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 )
+
+// Normalize package names.
+var normalizationRe = regexp.MustCompile(`[-_.]+`)
+
+// NormalizePackageName normalizes the package name.
+//
+// https://www.python.org/dev/peps/pep-0503/#normalized-names
+func NormalizePackageName(name string) string {
+	return strings.ToLower(normalizationRe.ReplaceAllString(name, "-"))
+}
 
 // ReadRopefile finds and reads the rope.json file by recursively
 // looking in the parent directory starting from the current working
@@ -46,8 +58,7 @@ func WriteRopefile(p *Project, path string) error {
 		return err
 	}
 
-	// TODO: TODO: Sync?
-	return ioutil.WriteFile(path, bytes, 0666)
+	return ioutil.WriteFile(path, append(bytes, []byte{'\n'}...), 0666)
 }
 
 var ErrRopefileNotFound = fmt.Errorf("rope.json not found (or in any of the parent directories)")

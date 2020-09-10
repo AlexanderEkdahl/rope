@@ -14,14 +14,20 @@ type Project struct {
 }
 
 type Dependency struct {
-	Name    string // Name may differ in casing depending on where it comes from
+	// Name is the canonical name of the package
+	Name    string
 	Version version.Version
 
-	// This is required to ensure reproduceable build in the event of missing
-	// requirement specifier of transitive dependencies and preventing always
-	// using the latest version in cases where transitive dependencies do not
-	// specify a version.
-	RequestedVersion version.Version
+	// Unspecified is true if no version constraint is applied
+	// to this dependency. Special care must be taken in this
+	// scenario to ensure reproduceable builds and not blindly
+	// selecting a version that is too recent when other
+	// dependencies specify a lower version.
+	Unspecified bool
+
+	// Mismatch is true if the found is not equal to the version
+	// specified by dependants.
+	Mismatch bool
 }
 
 func (d *Dependency) UnmarshalJSON(b []byte) error {
@@ -30,21 +36,24 @@ func (d *Dependency) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	split := strings.Split(s, "-")
-	if len(split) != 2 {
+	sep := strings.LastIndex(s, "-")
+	if sep < 0 {
 		return fmt.Errorf("expected dependency to be in the form of <name>-<version>, got: '%s'", s)
 	}
-	d.Name = string(split[0])
+	d.Name = NormalizePackageName(string(s[:sep]))
 
-	var err error
-	d.Version, err = version.Parse(split[1])
-	if err != nil {
-		return fmt.Errorf("dependency version not valid semver: %w", err)
+	var valid bool
+	d.Version, valid = version.Parse(s[sep+1:])
+	if !valid {
+		return fmt.Errorf("invalid version: '%s'", s[sep+1:])
 	}
 
 	return nil
 }
 
 func (d Dependency) MarshalJSON() ([]byte, error) {
+	if d.Version.Unspecified() {
+		return nil, fmt.Errorf("marshaling unspecified version for '%s'", d.Name)
+	}
 	return json.Marshal(fmt.Sprintf("%s-%s", d.Name, d.Version))
 }

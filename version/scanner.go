@@ -2,7 +2,6 @@ package version
 
 import (
 	"fmt"
-	"strings"
 	"text/scanner"
 	"unicode"
 )
@@ -67,14 +66,9 @@ func scanVersionRequirement(s *scanner.Scanner) (VersionRequirement, error) {
 		return VersionRequirement{}, fmt.Errorf("expected version, got EOF")
 	}
 
-	// TODO: Improve version parsing to support cases such as:
-	// - tensorflow (!=2.0.*,<3,>=1.15)
-	// - avro-python3 (!=1.9.2.*,<2.0.0,>=1.8.1)
-	versionString := strings.ReplaceAll(s.TokenText(), "*", "0")
-
-	version, err := Parse(versionString)
-	if err != nil {
-		return VersionRequirement{}, err
+	version, valid := Parse(s.TokenText())
+	if !valid {
+		return VersionRequirement{}, fmt.Errorf("invalid version '%s'", s.TokenText())
 	}
 
 	return VersionRequirement{
@@ -83,7 +77,7 @@ func scanVersionRequirement(s *scanner.Scanner) (VersionRequirement, error) {
 	}, nil
 }
 
-func ScanVersionRequirements(s *scanner.Scanner) ([]VersionRequirement, error) {
+func scanVersionRequirements(s *scanner.Scanner) ([]VersionRequirement, error) {
 	vrs := make([]VersionRequirement, 0)
 	for {
 		vr, err := scanVersionRequirement(s)
@@ -93,12 +87,13 @@ func ScanVersionRequirements(s *scanner.Scanner) ([]VersionRequirement, error) {
 		vrs = append(vrs, vr)
 
 		skipWhitespace(s)
-		if s.Peek() == ',' {
+		if r := s.Peek(); r == ',' {
 			s.Next()
+		} else if r == '=' || r == '<' || r == '!' || r == '~' || r == '>' {
+			// Multiple version specifiers should be separated by comma...
+			continue
 		} else {
-			break
+			return vrs, nil
 		}
 	}
-
-	return vrs, nil
 }

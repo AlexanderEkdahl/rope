@@ -1,42 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/pflag"
 )
 
-func buildPythonPath() (string, error) {
-	rope, err := ReadRopefile()
-	if err != nil {
-		return "", err
-	}
-
-	ropedir, err := filepath.Abs("ropedir")
-	if err != nil {
-		return "", err
-	}
-	paths := make([]string, 0, len(rope.Dependencies))
-	for _, d := range rope.Dependencies {
-		// TODO: This should install the missing dependencies
-		glob := filepath.Join(ropedir, "packages", fmt.Sprintf("%s-%s*", d.Name, d.Version))
-		matches, err := filepath.Glob(glob)
-		if err != nil {
-			return "", err
-		}
-
-		// TODO: Verify arch etc
-		if len(matches) > 0 {
-			paths = append(paths, matches[0])
-		}
-	}
-
-	return strings.Join(paths, string(os.PathListSeparator)), nil
-}
+// Version identifies the version of rope. This can be modified by CI during
+// the release process.
+var Version = "dev"
 
 const defaultHelp = `Rope is a tool for managing Python dependencies 🧩
 
@@ -48,7 +23,7 @@ The commands are:
 
   run          run command with PYTHONPATH configured
   init         initializes a new rope project
-  install      installs and adds one or more dependencies
+  add          installs and adds one or more dependencies
   remove       removes one or more dependencies
   show         inspect the current dependencies
   export       export dependency specification
@@ -57,18 +32,27 @@ The commands are:
   version      show rope version
 `
 
+// TODO: Figure out how to better interact with this.
+// Abstract methods that needs this type of interaction into its own type.
+var cache *Cache
+
+// Should move the main package into a cli folder and let the top-level package be 'rope'
+// Which can be directly used in the test harness.
 func run(args []string) (int, error) {
 	arg := ""
 	if len(args) > 1 {
 		arg = args[1]
 	}
 
+	cache = &Cache{}
+	defer cache.Close()
+
 	switch arg {
 	case "", "help", "--help", "-h":
 		fmt.Printf(defaultHelp)
 		return 2, nil
 	case "version", "--version":
-		fmt.Printf("rope version: 0.1.0") // TODO: Inject version
+		fmt.Printf("rope version: %s\n", Version)
 		return 0, nil
 	case "init":
 		if path, err := FindRopefile(); err == ErrRopefileNotFound {
@@ -83,10 +67,10 @@ func run(args []string) (int, error) {
 			return 1, err
 		}
 		return 0, nil
-	case "add":
-		fmt.Println("did you mean: 'rope install'?")
-		return 2, nil
 	case "install":
+		fmt.Println("did you mean: 'rope add'?")
+		return 2, nil
+	case "add":
 		flagSet := pflag.NewFlagSet("install", pflag.ContinueOnError)
 		timeout := flagSet.Duration("timeout", 0, "Command timeout")
 		if err := flagSet.Parse(args[1:]); err == pflag.ErrHelp {
@@ -100,7 +84,7 @@ func run(args []string) (int, error) {
 		}
 		packages := flagSet.Args()[1:]
 
-		if err := install(*timeout, packages); err != nil {
+		if err := add(*timeout, packages); err != nil {
 			return 1, err
 		}
 		return 0, nil
@@ -108,8 +92,10 @@ func run(args []string) (int, error) {
 		// TODO: Implement command to remove dependency(error if transitive)
 		return 1, fmt.Errorf("not implemented")
 	case "export":
-		// TODO: Implement command to export to requirements.txt for interop
-		return 1, fmt.Errorf("not implemented")
+		if err := ExportRequirements(context.Background(), os.Stdout); err != nil {
+			return 1, err
+		}
+		return 0, nil
 	case "show":
 		// TODO: Implement command to show all dependenies along with a tree view
 		return 1, fmt.Errorf("not implemented")
@@ -117,14 +103,14 @@ func run(args []string) (int, error) {
 		// TODO: Implement operations for show information/clearing the cache
 		return 1, fmt.Errorf("not implemented")
 	case "pythonpath":
-		pythonPath, err := buildPythonPath()
+		pythonPath, err := buildPythonPath(context.Background())
 		if err != nil {
 			return 1, err
 		}
 		fmt.Printf(pythonPath)
 		return 0, nil
 	case "run":
-		pythonPath, err := buildPythonPath()
+		pythonPath, err := buildPythonPath(context.Background())
 		if err != nil {
 			return 1, err
 		}
@@ -136,7 +122,7 @@ func run(args []string) (int, error) {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
-			return 1, nil
+			return 1, err
 		}
 		if err := cmd.Wait(); err != nil {
 			return cmd.ProcessState.ExitCode(), nil

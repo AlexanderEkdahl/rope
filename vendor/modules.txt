@@ -1,0 +1,10 @@
+# github.com/spf13/pflag v1.0.5
+## explicit
+github.com/spf13/pflag
+# golang.org/x/mod v0.3.0
+## explicit
+golang.org/x/mod/module
+golang.org/x/mod/semver
+# golang.org/x/xerrors v0.0.0-20191011141410-1b5146add898
+golang.org/x/xerrors
+golang.org/x/xerrors/internal
