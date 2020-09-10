@@ -15,8 +15,7 @@ type Project struct {
 
 type Dependency struct {
 	// Name is the canonical name of the package
-	Name string
-	// TODO: Augment version.Version to be directly comparable
+	Name    string
 	Version version.Version
 
 	// Unspecified is true if no version constraint is applied
@@ -25,6 +24,10 @@ type Dependency struct {
 	// selecting a version that is too recent when other
 	// dependencies specify a lower version.
 	Unspecified bool
+
+	// Mismatch is true if the found is not equal to the version
+	// specified by dependants.
+	Mismatch bool
 }
 
 func (d *Dependency) UnmarshalJSON(b []byte) error {
@@ -39,10 +42,10 @@ func (d *Dependency) UnmarshalJSON(b []byte) error {
 	}
 	d.Name = NormalizePackageName(string(s[:sep]))
 
-	var err error
-	d.Version, err = version.Parse(s[sep+1:])
-	if err != nil {
-		return fmt.Errorf("dependency version not valid semver: %w", err)
+	var valid bool
+	d.Version, valid = version.Parse(s[sep+1:])
+	if !valid {
+		return fmt.Errorf("invalid version: '%s'", s[sep+1:])
 	}
 
 	return nil

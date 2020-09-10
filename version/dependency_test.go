@@ -144,7 +144,7 @@ func TestParseDependencySpecifications(t *testing.T) {
 					t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tC.result.Versions)
 				}
 				for i := 0; i < len(tC.result.Versions); i++ {
-					if tC.result.Versions[i].Version.NE(r.Versions[i].Version.Version) {
+					if !tC.result.Versions[i].Equal(r.Versions[i].Version) {
 						t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tC.result.Versions)
 					}
 				}

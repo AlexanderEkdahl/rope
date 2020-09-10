@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/AlexanderEkdahl/rope/version"
-	"github.com/blang/semver/v4"
 )
 
 // Defalt constants for the Python Package index.
@@ -94,15 +93,9 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 				// six-1.15.0.tar.gz but six==1.15.0 is six-1.15.0-py2.py3-none-any.whl
 				// Must implement version selection preference to ensure the same variant
 				// is being selected.
-				if v.EQ(semver.Version{}) {
+				if v.Unspecified() {
 					foundPackage = p
-				} else if p.Version().GTE(v.Version) {
-					// Finds the first compatible package. This may result in a higher version
-					// than requested.
-					// TODO: Investigate merits of this vs using Equals
-
-					// Return early as the minimal version has been found(assumes index is ordered?) verify
-					// Investigate this to avoid pre-release versions etc(unless specifically requested?)
+				} else if p.Version().Match(v) {
 					foundPackage = p
 					break
 				}
@@ -130,12 +123,11 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 	}
 
 	// Cache the result of this in a JSON file to speed up interactions.
-	// TODO: extract dependencies from source distributions as well.
-	// if p, ok := foundPackage.(interface{ extractDependencies(context.Context) error }); ok {
-	// 	if err := p.extractDependencies(ctx); err != nil {
-	// 		return nil, fmt.Errorf("extracting dependencies: %w", err)
-	// 	}
-	// }
+	if p, ok := foundPackage.(interface{ extractDependencies(context.Context) error }); ok {
+		if err := p.extractDependencies(ctx); err != nil {
+			return nil, fmt.Errorf("extracting dependencies: %w", err)
+		}
+	}
 
 	return foundPackage, nil
 }

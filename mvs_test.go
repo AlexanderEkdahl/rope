@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/AlexanderEkdahl/rope/version"
-	"github.com/blang/semver/v4"
 )
 
 type testPackageIndex struct {
@@ -15,11 +14,10 @@ type testPackageIndex struct {
 func (pi *testPackageIndex) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
 	var foundPackage Package
 	for _, p := range pi.index[name] {
-		if v.Equals(semver.Version{}) {
+		if v.Unspecified() {
 			foundPackage = p
-			// Keep searching as there may be another package with a higher
-			// version matching.
-		} else if v.EQ(p.version.Version) {
+			// Keep searching as there may be another package with a higher version.
+		} else if v.Equal(p.version) {
 			return p, nil
 		}
 	}
@@ -590,7 +588,7 @@ func verifyMinimalVersionSelection(
 		t.Fatalf("build list != expected build list: got: %v, want: %v", build, expectedBuild)
 	}
 	for i := 0; i < len(expectedBuild); i++ {
-		if expectedBuild[i].Name != build[i].Name || expectedBuild[i].Version.NE(build[i].Version.Version) {
+		if expectedBuild[i].Name != build[i].Name || !expectedBuild[i].Version.Equal(build[i].Version) {
 			t.Fatalf("build list != expected build list: got: %v, want: %v", build, expectedBuild)
 		}
 	}
@@ -600,7 +598,7 @@ func verifyMinimalVersionSelection(
 			t.Fatalf("minimal list != expected minimal list: got: %v, want: %v", minimal, expectedMinimal)
 		}
 		for i := 0; i < len(expectedMinimal); i++ {
-			if expectedMinimal[i].Name != minimal[i].Name || expectedMinimal[i].Version.NE(minimal[i].Version.Version) {
+			if expectedMinimal[i].Name != minimal[i].Name || !expectedMinimal[i].Version.Equal(minimal[i].Version) {
 				t.Fatalf("minimal list != expected minimal list: got: %v, want: %v", minimal, expectedMinimal)
 			}
 		}

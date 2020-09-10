@@ -26,9 +26,9 @@ func ParseSdistFilename(filename string) (*Sdist, error) {
 	}
 	versionString := strings.TrimSuffix(filename, ".tar.gz")[sep+1:]
 
-	v, err := version.Parse(versionString)
-	if err != nil {
-		return nil, fmt.Errorf("invalid semver: %v(%s)", versionString, err)
+	v, valid := version.Parse(versionString)
+	if !valid {
+		return nil, fmt.Errorf("invalid version: '%s'", versionString)
 	}
 
 	return &Sdist{

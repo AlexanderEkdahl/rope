@@ -28,7 +28,6 @@ Unlike pip/conda/pipenv/poetry `rope` uses a different algorithm to select the v
 The following dependencies are statically included in the resulting binary and does not have to be installed by an end-user.
 
 - `github.com/spf13/pflag`: Drop-in replacement of the built-in flag package implementing POSIX/GNU-style --flags familiar to Python users.
-- `github.com/blang/semver/v4`: Library for parsing [semver](https://semver.org). Mostly compatible with the versioning patterns in Python. PEP 440 compatible version parsing is still and outstanding task.
 
 ## Development setup
 
@@ -99,3 +98,4 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Support PEP517 builds for projects that support it.
 - Attempt to extract sdist dependencies from PKG-INFO
 - Cache sdist downloads
+- Use BigQuery to download a list of packages that are popular and don't have transitive dependencies(i.e. numpy) since checking PKG-INFO can not eliminate the possibility of there being transitive dependencies.

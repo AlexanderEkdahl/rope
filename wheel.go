@@ -49,9 +49,9 @@ func ParseWheelFilename(filename string) (WheelFilename, error) {
 		return WheelFilename{}, fmt.Errorf("expected wheel to be in at most 6 parts, got: %s", filename)
 	}
 
-	v, err := version.Parse(split[1])
-	if err != nil {
-		return WheelFilename{}, err
+	v, valid := version.Parse(split[1])
+	if !valid {
+		return WheelFilename{}, fmt.Errorf("invalid version in wheel package name: '%s'", split[1])
 	}
 
 	return WheelFilename{
@@ -321,7 +321,6 @@ func (p *Wheel) fetch(ctx context.Context) error {
 		return fmt.Errorf("closing file after download: %w", err)
 	}
 
-	fmt.Println("caching", file.Name())
 	cachedPath, err := cache.AddWheel(p, file.Name())
 	if err != nil {
 		return err
@@ -388,7 +387,7 @@ func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependenc
 				continue
 			}
 
-			// fmt.Printf("🍀 %s(minimal = %s)\n", row, version.Minimal(dep.Versions))
+			// fmt.Printf("🍀 %s %s(minimal = %s)\n", p.name, row, version.Minimal(dep.Versions))
 			dependencies = append(dependencies, Dependency{
 				Name:    NormalizePackageName(dep.DistributionName),
 				Version: version.Minimal(dep.Versions),

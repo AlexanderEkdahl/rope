@@ -50,7 +50,7 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 			return true
 		}
 
-		return v2.GT(d1.Version.Version)
+		return v2.GreaterThan(d1.Version)
 	}
 
 	visited := make(map[string]struct{})
@@ -76,23 +76,23 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 		d := work[0]
 		work = work[1:]
 
-		p, err := index.FindPackage(ctx, d.Name, d.Version)
-		if err != nil {
-			return nil, nil, fmt.Errorf("finding package '%s-%s': %w", d.Name, d.Version, err)
-		}
-
-		if v, ok := buildDependencies[p.Name()]; !ok || replace(v.value, p.Version(), d.Version.Unspecified()) {
+		if v, ok := buildDependencies[d.Name]; !ok || replace(v.value, d.Version, d.Version.Unspecified()) {
 			// if ok {
-			// 	fmt.Printf("🧩🧩🧩 replacing %s-%s with %s-%s\n", v.value.Name, v.value.Version, d.Name, d.Version)
+			// 	fmt.Printf("🧩 replacing %s-%s with %s-%s\n", v.value.Name, v.value.Version, d.Name, d.Version)
 			// }
-			if p, ok := p.(interface{ extractDependencies(context.Context) error }); ok {
-				if err := p.extractDependencies(ctx); err != nil {
-					return nil, nil, fmt.Errorf("extracting dependencies: %w", err)
-				}
+
+			p, err := index.FindPackage(ctx, d.Name, d.Version)
+			if err != nil {
+				return nil, nil, fmt.Errorf("finding package '%s-%s': %w", d.Name, d.Version, err)
 			}
 
 			buildDependencies[p.Name()] = node{
-				value:        Dependency{p.Name(), p.Version(), d.Version.Unspecified()},
+				value: Dependency{
+					Name:        p.Name(),
+					Version:     p.Version(),
+					Unspecified: d.Version.Unspecified(),
+					Mismatch:    !d.Version.Unspecified() && !p.Version().Equal(d.Version),
+				},
 				dependencies: p.Dependencies(),
 			}
 
@@ -112,7 +112,7 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 	max := map[string]version.Version{}
 	for name, node := range buildDependencies {
 		if v, ok := max[name]; ok {
-			if node.value.Version.GT(v.Version) {
+			if node.value.Version.GreaterThan(v) {
 				max[name] = node.value.Version
 			}
 		} else {
@@ -133,7 +133,7 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 			return
 		}
 		cache[dependencyID] = n.dependencies
-		if n.value.Unspecified {
+		if n.value.Unspecified || n.value.Mismatch {
 			unspecified[n.value.Name] = true
 		}
 		for _, d := range n.dependencies {
@@ -171,15 +171,17 @@ func MinimalVersionSelection(ctx context.Context, base []Dependency, index Packa
 		walk2(d)
 	}
 	for i := len(postorder) - 1; i >= 0; i-- {
-		n := postorder[i]
-		if max[n.value.Name].LE(n.value.Version.Version) {
-			continue
-		}
-		if !have[n.value.Name] {
-			minimalDependencies[postorder[i].value.Name] = postorder[i].value
-			walk2(n.value)
-			panic("this never happens?")
-		}
+		// TODO: Bring this logic back sine it broke when transitioning from semver.Version to
+		// version.Version
+		// n := postorder[i]
+		// if max[n.value.Name].LE(n.value.Version) {
+		// 	continue
+		// }
+		// if !have[n.value.Name] {
+		// 	minimalDependencies[postorder[i].value.Name] = postorder[i].value
+		// 	walk2(n.value)
+		// 	// panic("this never happens?")
+		// }
 	}
 	// Finally add all unbounded versions to the minimal requirement list to ensure
 	// results are reproduceable when a new version get released.

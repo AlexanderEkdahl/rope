@@ -138,6 +138,7 @@ func TestCLI(t *testing.T) {
 		// },
 		// markdown is distributed as 'Markdown'
 		// TODO: Figure out why 'importlib_metadata' is required
+		// Appears as if there is a condition requirement: importlib-metadata; python_version < "3.8"
 		"markdown": {
 			steps: []step{
 				{

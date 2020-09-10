@@ -81,11 +81,7 @@ func (c *Cache) GetWheel(name string, v version.Version) (*Wheel, error) {
 				return nil, err
 			}
 
-			if fi.Version.NE(v.Version) {
-				continue
-			}
-
-			if fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+			if fi.Version.Equal(v) && fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
 				fmt.Printf("✅\n")
 				return &Wheel{
 					name:     fi.Name,

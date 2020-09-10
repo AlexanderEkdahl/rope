@@ -138,7 +138,7 @@ func scanVersionSpec(s *scanner.Scanner) ([]VersionRequirement, error) {
 		parentheses = true
 		s.Next()
 	}
-	versions, err := ScanVersionRequirements(s)
+	versions, err := scanVersionRequirements(s)
 	if err != nil {
 		return nil, err
 	}
