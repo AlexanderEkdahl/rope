@@ -51,7 +51,7 @@ type Sdist struct {
 	name     string // Canonical name
 	version  version.Version
 	filename string
-	suffix   string // TODO: Support other suffixes for source distributions.
+	suffix   string
 
 	// url is only set when the package was found in a remote package repository.
 	url string
@@ -162,7 +162,7 @@ func (s *Sdist) convert(ctx context.Context) error {
 	}
 
 	if !fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-		return fmt.Errorf("built source distribution is incompatible")
+		return fmt.Errorf("built source distribution is incompatible: '%s'", filename)
 	}
 
 	// Cache resulting wheel

@@ -188,6 +188,8 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 		sdist.url = href
 
 		return sdist, true
+	case strings.HasSuffix(filename, ".msi"):
+		return nil, false
 	default:
 		fmt.Println("unknown distribution type:", filename)
 		return nil, false
