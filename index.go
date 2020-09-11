@@ -157,7 +157,7 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 			url:      href,
 		}, true
 	case strings.HasSuffix(filename, ".tar.gz"):
-		sdist, err := ParseSdistFilename(filename)
+		sdist, err := ParseSdistFilename(filename, ".tar.gz")
 		if err != nil {
 			return nil, false
 		}
@@ -169,13 +169,25 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 	case strings.HasSuffix(filename, ".exe"):
 		return nil, false
 	case strings.HasSuffix(filename, ".zip"):
-		return nil, false
+		sdist, err := ParseSdistFilename(filename, ".zip")
+		if err != nil {
+			return nil, false
+		}
+		sdist.url = href
+
+		return sdist, true
 	case strings.HasSuffix(filename, ".rpm"):
 		return nil, false
 	case strings.HasSuffix(filename, ".tar.bz2"):
 		return nil, false
 	case strings.HasSuffix(filename, ".tgz"):
-		return nil, false
+		sdist, err := ParseSdistFilename(filename, ".tgz")
+		if err != nil {
+			return nil, false
+		}
+		sdist.url = href
+
+		return sdist, true
 	default:
 		fmt.Println("unknown distribution type:", filename)
 		return nil, false

@@ -5,7 +5,7 @@ import (
 )
 
 func TestParsingSdist(t *testing.T) {
-	sdist, err := ParseSdistFilename("python-slugify-3.0.0.tar.gz")
+	sdist, err := ParseSdistFilename("python-slugify-3.0.0.tar.gz", ".tar.gz")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -18,13 +20,13 @@ import (
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
-func ParseSdistFilename(filename string) (*Sdist, error) {
-	// TODO: Support more sdist formats
+// ParseSdistFilename returns a Sdist package from a given filename
+func ParseSdistFilename(filename, suffix string) (*Sdist, error) {
 	sep := strings.LastIndex(filename, "-")
 	if sep < 0 {
-		return nil, fmt.Errorf("expected sdist .tar.gz file to <name>-<version>.tar.gz, got: %s", filename)
+		return nil, fmt.Errorf("expected sdist filename to be <name>-<version>%s, got: %s", suffix, filename)
 	}
-	versionString := strings.TrimSuffix(filename, ".tar.gz")[sep+1:]
+	versionString := strings.TrimSuffix(filename, suffix)[sep+1:]
 
 	v, valid := version.Parse(versionString)
 	if !valid {
@@ -35,7 +37,7 @@ func ParseSdistFilename(filename string) (*Sdist, error) {
 		name:     NormalizePackageName(filename[:sep]),
 		version:  v,
 		filename: filename,
-		suffix:   ".tar.gz",
+		suffix:   suffix,
 	}, nil
 }
 
@@ -108,46 +110,20 @@ func (s *Sdist) convert(ctx context.Context) error {
 	}
 	defer os.RemoveAll(tmp)
 
-	gzipReader, err := gzip.NewReader(body)
-	if err != nil {
-		return err
-	}
-	defer gzipReader.Close()
-
-	tr := tar.NewReader(gzipReader)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return fmt.Errorf("reading tar header: %w", err)
+	switch s.suffix {
+	case ".tar.gz", ".tgz":
+		if err := s.untar(body, tmp); err != nil {
+			return err
 		}
-
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			// Some tar files are somehow built without directory entries so
-			// these can not be relied upon.
-		case tar.TypeReg:
-			// TODO: Final directory should be created with 0500
-			if err := os.MkdirAll(filepath.Dir(filepath.Join(tmp, hdr.Name)), 0777); err != nil {
-				return err
-			}
-			out, err := os.Create(filepath.Join(tmp, hdr.Name))
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
-				return err
-			}
-			if err := out.Close(); err != nil {
-				return err
-			}
+	case ".zip":
+		if err := s.unzip(body, tmp); err != nil {
+			return err
 		}
 	}
-	tarRoot := filepath.Join(tmp, strings.TrimSuffix(s.filename, s.suffix))
-	if _, err := os.Stat(tarRoot); errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("invalid source distribution: expected %s to exist after extraction", tarRoot)
+
+	root := filepath.Join(tmp, strings.TrimSuffix(s.filename, s.suffix))
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("invalid source distribution: expected %s to exist after extraction", root)
 	}
 
 	wheelPath := filepath.Join(tmp, "wheel")
@@ -160,7 +136,7 @@ func (s *Sdist) convert(ctx context.Context) error {
 		"-d",
 		wheelPath,
 	)
-	installCmd.Dir = tarRoot
+	installCmd.Dir = root
 	// Ensure command is not inherenting PYTHONPATH which may inadvertendely
 	// use a version of system dependencies that is too old due to a minimal
 	// version selected by this program...
@@ -207,6 +183,92 @@ func (s *Sdist) convert(ctx context.Context) error {
 	whl.path = cachedPath
 
 	s.wheel = whl
+	return nil
+}
+
+func (s *Sdist) untar(body io.Reader, tmp string) error {
+	gzipReader, err := gzip.NewReader(body)
+	if err != nil {
+		return err
+	}
+	defer gzipReader.Close()
+
+	tr := tar.NewReader(gzipReader)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return fmt.Errorf("reading tar header: %w", err)
+		}
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			// Some tar files are somehow built without directory entries so
+			// these can not be relied upon.
+		case tar.TypeReg:
+			// TODO: Final directory should be created with 0500
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(tmp, hdr.Name)), 0777); err != nil {
+				return err
+			}
+			out, err := os.Create(filepath.Join(tmp, hdr.Name))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return err
+			}
+			if err := out.Close(); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Sdist) unzip(body io.Reader, tmp string) error {
+	// Risks using too much memory by using a memory backed buffer as intermediate storage.
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, body); err != nil {
+		return err
+	}
+
+	r, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		return err
+	}
+
+	for _, file := range r.File {
+		f, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		target := filepath.Join(tmp, file.Name)
+		if err := os.MkdirAll(filepath.Dir(target), 0777); err != nil {
+			return err
+		}
+
+		dst, err := os.Create(target)
+		if err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(dst, f); err != nil {
+			return err
+		}
+
+		if err := f.Close(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
