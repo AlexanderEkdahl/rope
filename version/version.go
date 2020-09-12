@@ -191,18 +191,19 @@ func (v Version) Canonical() string {
 	return sb.String()
 }
 
-// Equal returns true if the two versions are equal. This is a strict form of
-// version equality and compares everything except for the local version.
+// Equal returns true if the two versions are equal.
 // It also "zero-pads" the release segment.
 func (v Version) Equal(v2 Version) bool {
-	return v.Epoch == v2.Epoch &&
+	return true &&
+		v.Epoch == v2.Epoch &&
 		v.Release == v2.Release &&
 		v.PreReleasePhase == v2.PreReleasePhase &&
 		v.PreReleaseVersion == v2.PreReleaseVersion &&
 		v.PostRelease == v2.PostRelease &&
 		v.PostReleaseVersion == v2.PostReleaseVersion &&
 		v.DevRelease == v2.DevRelease &&
-		v.DevReleaseVersion == v2.DevReleaseVersion
+		v.DevReleaseVersion == v2.DevReleaseVersion &&
+		v.LocalVersion == v2.LocalVersion
 }
 
 // Match returns true if the version v matches the version v2.

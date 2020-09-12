@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -105,7 +106,7 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 	}
 
 	if len(foundPackages) == 0 {
-		return nil, ErrPackageNotFound
+		return nil, fmt.Errorf("compatible package not found")
 	}
 
 	// Multiple packages may match the version; select the preferred package
@@ -149,7 +150,7 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 		return nil, false
 	}
 
-	filename := path.Base(url.EscapedPath())
+	filename := path.Base(url.Path)
 	switch {
 	case strings.HasSuffix(filename, ".whl"):
 		whl, err := ParseWheelFilename(filename)
@@ -228,4 +229,105 @@ func preferred(a, b *Wheel) bool {
 	}
 
 	return true
+}
+
+// LinkIndex is a simple form of an index such as:
+// https://download.pytorch.org/whl/torch_stable.html
+type LinkIndex struct {
+	url string
+}
+
+// FindPackage finds the package with the specified name and optionally version in
+// the index.
+func (i *LinkIndex) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
+	name = NormalizePackageName(name)
+	// Search the local cache first
+	if wheel, err := cache.GetWheel(name, v); err != nil {
+		return nil, err
+	} else if cacheOnly, _ := strconv.ParseBool(os.Getenv("ROPE_CACHE_ONLY")); cacheOnly && wheel == nil {
+		return nil, fmt.Errorf("package not found in cache (ROPE_CACHE_ONLY is set)")
+	} else if wheel != nil {
+		// TODO: Packages found in the cache should also include dependencies
+		if err := wheel.extractDependencies(ctx); err != nil {
+			return nil, fmt.Errorf("extracting dependencies: %w", err)
+		}
+
+		return wheel, nil
+	}
+
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, i.url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	switch res.StatusCode {
+	case http.StatusOK:
+		// continue
+	default:
+		return nil, fmt.Errorf("failed HTTP request: %s", res.Status)
+	}
+
+	dec := xml.NewDecoder(res.Body)
+	for {
+		token, err := dec.Token()
+		var syntaxError *xml.SyntaxError
+		if err == io.EOF {
+			break
+		} else if errors.As(err, &syntaxError) && syntaxError.Msg == "unexpected EOF" {
+			// Safe to assume no more links will be found unless index download was
+			// unexpectedly terminated half way through. This is here since pip
+			// seemingly does not care about invalid XML.
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		if token, ok := token.(xml.StartElement); ok && token.Name.Local == "a" {
+			href := ""
+			for _, attr := range token.Attr {
+				if attr.Name.Local == "href" {
+					href = attr.Value
+				}
+			}
+
+			url, err := url.Parse(href)
+			if err != nil {
+				return nil, err
+			}
+
+			var p Package
+			switch {
+			case strings.HasSuffix(url.Path, ".whl"):
+				whl, err := ParseWheelFilename(path.Base(url.Path))
+				if err != nil {
+					return nil, err
+				}
+
+				if !whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+					continue
+				}
+
+				p = whl
+			default:
+				// Skip any other links
+				// TODO: Support .tar.gz distributions
+				continue
+			}
+
+			if !p.Version().Equal(v) {
+				continue
+			}
+
+			// TODO: Support ordering found packages by preference
+			return p, nil
+		}
+	}
+
+	return nil, nil
 }
