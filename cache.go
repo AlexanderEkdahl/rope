@@ -76,20 +76,15 @@ func (c *Cache) GetWheel(name string, v version.Version) (*Wheel, error) {
 
 		// Only search for .whl files.
 		if strings.HasSuffix(filename, ".whl") {
-			fi, err := ParseWheelFilename(filename)
+			whl, err := ParseWheelFilename(filename)
 			if err != nil {
 				return nil, err
 			}
+			whl.path = filepath.Join(dir, filename)
 
-			if fi.Version.Equal(v) && fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+			if whl.version.Equal(v) && whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
 				fmt.Printf("✅\n")
-				return &Wheel{
-					name:     fi.Name,
-					filename: filename,
-					version:  fi.Version,
-
-					path: filepath.Join(dir, filename),
-				}, nil
+				return whl, nil
 			}
 		}
 	}

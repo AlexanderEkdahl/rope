@@ -26,14 +26,14 @@ func TestMinimal(t *testing.T) {
 			MustParse("1.15"),
 		},
 	}
-	for _, tC := range testCases {
-		t.Run(tC.input, func(t *testing.T) {
-			vrs, err := ParseVersionRequirements(tC.input)
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			vrs, err := ParseVersionRequirements(tc.input)
 			if err != nil {
 				t.Fatalf("unexpected error, got: %v", err)
 			}
-			if min := Minimal(vrs); !min.Equal(tC.output) {
-				t.Fatalf("incorrect minimal version, got: %s, want: %s", min, tC.output)
+			if min := Minimal(vrs); !min.Equal(tc.output) {
+				t.Fatalf("incorrect minimal version, got: %s, want: %s", min, tc.output)
 			}
 		})
 	}

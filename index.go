@@ -30,6 +30,7 @@ type Index struct {
 }
 
 func (i *Index) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
+	name = NormalizePackageName(name)
 	// Search the local cache first
 	if wheel, err := cache.GetWheel(name, v); err != nil {
 		return nil, err
@@ -44,7 +45,6 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 		return wheel, nil
 	}
 
-	// TODO: Normalize request to avoid redirect?
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s/", i.url, name), nil)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,8 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 		return nil, fmt.Errorf("failed HTTP request: %s", res.Status)
 	}
 
-	var foundPackage Package
+	var foundPackages []Package
+	var foundVersion version.Version
 	dec := xml.NewDecoder(res.Body)
 	for {
 		token, err := dec.Token()
@@ -85,26 +86,36 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 
 			p, ok := i.checkCompatability(href)
 			if ok {
-				// If no version is specified find the latest compatible version
-				// TODO: This is unstable as it may select a different version depending on
-				// whether or not looking for the latest version or the same version but
-				// specified explicitly.
-				// For example in the case of https://pypi.org/simple/six/ the <latest> is
-				// six-1.15.0.tar.gz but six==1.15.0 is six-1.15.0-py2.py3-none-any.whl
-				// Must implement version selection preference to ensure the same variant
-				// is being selected.
 				if v.Unspecified() {
-					foundPackage = p
+					if !foundVersion.Unspecified() && p.Version().GreaterThan(foundVersion) {
+						// Reset found packages since a greater version has been found.
+						foundPackages = nil
+					}
+
+					foundPackages = append(foundPackages, p)
+					foundVersion = p.Version()
 				} else if p.Version().Match(v) {
-					foundPackage = p
+					foundPackages = append(foundPackages, p)
+				} else if !foundVersion.Unspecified() {
+					// stop early since all packages matching the version v has been found.
 					break
 				}
 			}
 		}
 	}
 
-	if foundPackage == nil {
+	if len(foundPackages) == 0 {
 		return nil, ErrPackageNotFound
+	}
+
+	// Multiple packages may match the version; select the preferred package
+	foundPackage := foundPackages[0]
+	for i := 1; i < len(foundPackages); i++ {
+		// This will select that last preferred package in the case of multiple
+		// packages being equally preferred.
+		if Preferred(foundPackages[i], foundPackage) {
+			foundPackage = foundPackages[i]
+		}
 	}
 
 	// If the original query did not specify a version, check the cache to see if
@@ -141,21 +152,17 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 	filename := path.Base(url.EscapedPath())
 	switch {
 	case strings.HasSuffix(filename, ".whl"):
-		fi, err := ParseWheelFilename(filename)
+		whl, err := ParseWheelFilename(filename)
 		if err != nil {
 			return nil, false
 		}
 
-		if !fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+		if !whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
 			return nil, false
 		}
+		whl.url = href
 
-		return &Wheel{
-			name:     fi.Name,
-			filename: filename,
-			version:  fi.Version,
-			url:      href,
-		}, true
+		return whl, true
 	case strings.HasSuffix(filename, ".tar.gz"):
 		sdist, err := ParseSdistFilename(filename, ".tar.gz")
 		if err != nil {
@@ -194,4 +201,31 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 		fmt.Println("unknown distribution type:", filename)
 		return nil, false
 	}
+}
+
+// Preferred returns true if a should be the preferred package to install compared to b.
+func Preferred(a, b Package) bool {
+	aWheel, aIsWheel := a.(*Wheel)
+	bWheel, bIsWheel := b.(*Wheel)
+	if aIsWheel && !bIsWheel {
+		return true
+	} else if !aIsWheel && bIsWheel {
+		return false
+	} else if !aIsWheel && !bIsWheel {
+		// Both packages are source distributions. Prefer a over b for stability.
+		return true
+	}
+
+	return preferred(aWheel, bWheel)
+}
+
+func preferred(a, b *Wheel) bool {
+	// TODO: Expand preference logic
+	if b.platform == "any" && a.platform != "any" {
+		return true
+	} else if a.platform == "any" && b.platform != "any" {
+		return false
+	}
+
+	return true
 }

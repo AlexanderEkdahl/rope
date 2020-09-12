@@ -421,6 +421,12 @@ func TestVersionComparison(t *testing.T) {
 		{
 			"0.5.0", "0.5", 0,
 		},
+		{
+			"1.11.0rc2", "1.11.0rc1", 1,
+		},
+		{
+			"1.11.dev4", "1.11.dev3", 1,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%s-%s", tc.a, tc.b), func(t *testing.T) {

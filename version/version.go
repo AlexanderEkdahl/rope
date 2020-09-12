@@ -207,8 +207,10 @@ func (v Version) Equal(v2 Version) bool {
 
 // Match returns true if the version v matches the version v2.
 // https://www.python.org/dev/peps/pep-0440/#version-matching
-// TODO: This should instead use []VersionRequirement to
-// accurately find matching versions.
+// TODO: This should instead use []VersionRequirement in
+// order to more accurately find matching versions. When
+// the found version differs from the minimal version it will
+// be recorded in rope.json
 func (v Version) Match(v2 Version) bool {
 	if v.Epoch != v2.Epoch {
 		return false
@@ -293,7 +295,7 @@ func Compare(a, b Version) int {
 		} else if a.PreReleasePhase < b.PreReleasePhase {
 			return -1
 		}
-		if a.PreReleaseVersion > b.PostReleaseVersion {
+		if a.PreReleaseVersion > b.PreReleaseVersion {
 			return 1
 		}
 
@@ -314,7 +316,7 @@ func Compare(a, b Version) int {
 	}
 
 	if compare(b, a) != -1*compare(a, b) {
-		// TODO: Remove this assertion
+		// TODO: Remove this assertion once implementation is considered stable.
 		panic(fmt.Sprintf("version.Compare is not symmetric for a: %s, b: %s", a, b))
 	}
 

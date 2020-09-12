@@ -130,30 +130,30 @@ func TestParseDependencySpecifications(t *testing.T) {
 			ErrUnknownEnvironmentMarker,
 		},
 	}
-	for _, tC := range testCases {
-		t.Run(tC.input, func(t *testing.T) {
-			r, err := ParseDependencySpecification(tC.input)
-			if err != tC.err {
-				t.Fatalf("unexpected error, got: %v, want: %v", err, tC.err)
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			r, err := ParseDependencySpecification(tc.input)
+			if err != tc.err {
+				t.Fatalf("unexpected error, got: %v, want: %v", err, tc.err)
 			}
 			if err == nil {
-				if tC.result.DistributionName != r.DistributionName {
-					t.Fatalf("incorrect distribution name, got: %v, want: %v", r.DistributionName, tC.result.DistributionName)
+				if tc.result.DistributionName != r.DistributionName {
+					t.Fatalf("incorrect distribution name, got: %v, want: %v", r.DistributionName, tc.result.DistributionName)
 				}
-				if len(tC.result.Versions) != len(r.Versions) {
-					t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tC.result.Versions)
+				if len(tc.result.Versions) != len(r.Versions) {
+					t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tc.result.Versions)
 				}
-				for i := 0; i < len(tC.result.Versions); i++ {
-					if !tC.result.Versions[i].Equal(r.Versions[i].Version) {
-						t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tC.result.Versions)
+				for i := 0; i < len(tc.result.Versions); i++ {
+					if !tc.result.Versions[i].Equal(r.Versions[i].Version) {
+						t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tc.result.Versions)
 					}
 				}
-				if len(tC.result.Extras) != len(r.Extras) {
-					t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tC.result.Versions)
+				if len(tc.result.Extras) != len(r.Extras) {
+					t.Fatalf("incorrect versions, got: %v, want: %v", r.Versions, tc.result.Versions)
 				}
-				for i := 0; i < len(tC.result.Extras); i++ {
-					if tC.result.Extras[i] != r.Extras[i] {
-						t.Fatalf("incorrect extras, got: %v, want: %v", r.Extras, tC.result.Extras)
+				for i := 0; i < len(tc.result.Extras); i++ {
+					if tc.result.Extras[i] != r.Extras[i] {
+						t.Fatalf("incorrect extras, got: %v, want: %v", r.Extras, tc.result.Extras)
 					}
 				}
 			}

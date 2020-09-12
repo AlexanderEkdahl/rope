@@ -69,9 +69,6 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 
 ### TODO
 
-- Return the most compatible version if multiple version are available.
-    - `rope add numpy` downloads 2 versions of numpy(due to unstable package selection)
-    - `rope add six` downloads a sdist and a wheel(due to unstable package selection)
 - Parallelize version selection/installation process.
 - Support for platform specific wheels across all platforms supported by Python
 - Written package folders should be write protected to prevent inadvertendly changing files for other projects/users(match go modules)
@@ -97,3 +94,4 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Attempt to extract sdist dependencies from PKG-INFO
 - Cache sdist downloads
 - Use BigQuery to download a list of packages that are popular and don't have transitive dependencies(i.e. numpy) since checking PKG-INFO can not eliminate the possibility of there being transitive dependencies.
+- Should only extract dependencies from transitive dependencies if absolutely neccessary.

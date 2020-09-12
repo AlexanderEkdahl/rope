@@ -36,11 +36,11 @@ func TestCompatiblePython(t *testing.T) {
 			false,
 		},
 	}
-	for i, tC := range testCases {
+	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			result := CompatiblePython(tC.a, tC.b)
-			if result != tC.result {
-				t.Fatalf("CompatiblePython(%s, %s) == %v, expected: %v", tC.a, tC.b, result, tC.result)
+			result := CompatiblePython(tc.a, tc.b)
+			if result != tc.result {
+				t.Fatalf("CompatiblePython(%s, %s) == %v, expected: %v", tc.a, tc.b, result, tc.result)
 			}
 		})
 	}
@@ -78,11 +78,11 @@ func TestCompatiblePlatform(t *testing.T) {
 			true,
 		},
 	}
-	for i, tC := range testCases {
+	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			result := CompatiblePlatform(tC.platform, tC.goos, tC.goarch)
-			if result != tC.result {
-				t.Fatalf("CompatiblePlatform(%s, %s) == %v, expected: %v", tC.platform, tC.goos, result, tC.result)
+			result := CompatiblePlatform(tc.platform, tc.goos, tc.goarch)
+			if result != tc.result {
+				t.Fatalf("CompatiblePlatform(%s, %s) == %v, expected: %v", tc.platform, tc.goos, result, tc.result)
 			}
 		})
 	}

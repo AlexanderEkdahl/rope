@@ -21,59 +21,52 @@ import (
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
+// ParseWheelFilename instantiates a Wheel from a given filename.
 // https://www.python.org/dev/peps/pep-0427/#file-name-convention
-type WheelFilename struct {
-	// TODO: Merge this with Wheel like Sdist
-	Name          string
-	Version       version.Version
-	Build         string
-	PythonVersion string
-	ABI           string
-	Platform      string
-}
-
-func ParseWheelFilename(filename string) (WheelFilename, error) {
+func ParseWheelFilename(filename string) (*Wheel, error) {
 	trim := strings.TrimSuffix(filename, ".whl")
 	if filename == trim {
-		return WheelFilename{}, fmt.Errorf("not a wheel")
+		return nil, fmt.Errorf("not a wheel")
 	}
 
 	build := ""
 	split := strings.Split(trim, "-")
 	switch {
 	case len(split) < 5:
-		return WheelFilename{}, fmt.Errorf("expected wheel to be in at least 5 parts, got: %s", filename)
+		return nil, fmt.Errorf("expected wheel to be in at least 5 parts, got: %s", filename)
 	case len(split) == 6:
 		build = split[2]
 	case len(split) > 6:
-		return WheelFilename{}, fmt.Errorf("expected wheel to be in at most 6 parts, got: %s", filename)
+		return nil, fmt.Errorf("expected wheel to be in at most 6 parts, got: %s", filename)
 	}
 
 	v, valid := version.Parse(split[1])
 	if !valid {
-		return WheelFilename{}, fmt.Errorf("invalid version in wheel package name: '%s'", split[1])
+		return nil, fmt.Errorf("invalid version in wheel package name: '%s'", split[1])
 	}
 
-	return WheelFilename{
-		Name:          NormalizePackageName(split[0]),
-		Version:       v,
-		Build:         build,
-		PythonVersion: split[len(split)-3],
-		ABI:           split[len(split)-2],
-		Platform:      split[len(split)-1],
+	return &Wheel{
+		name:     NormalizePackageName(split[0]),
+		filename: filename,
+		version:  v,
+
+		build:         build,
+		pythonVersion: split[len(split)-3],
+		abi:           split[len(split)-2],
+		platform:      split[len(split)-1],
 	}, nil
 }
 
-func (fi *WheelFilename) Compatible(pythonVersion, abi, goos, gorch string) bool {
-	if !CompatiblePython(fi.PythonVersion, pythonVersion) {
+func (p *Wheel) Compatible(pythonVersion, abi, goos, gorch string) bool {
+	if !CompatiblePython(p.pythonVersion, pythonVersion) {
 		return false
 	}
 
-	if !CompatibleABI(fi.ABI, abi) {
+	if !CompatibleABI(p.abi, abi) {
 		return false
 	}
 
-	if !CompatiblePlatform(fi.Platform, goos, gorch) {
+	if !CompatiblePlatform(p.platform, goos, gorch) {
 		return false
 	}
 
@@ -110,7 +103,6 @@ func CompatibleABI(candidate, abi string) bool {
 	return true
 }
 
-// TODO: Rank by specificity
 func CompatiblePlatform(platform, goos, goarch string) bool {
 	if platform == "any" {
 		return true
@@ -139,7 +131,6 @@ func compatibleOS(platform string, goos string) bool {
 		// https://www.python.org/dev/peps/pep-0599/
 		// matches manylinux1, manylinux2010, manylinux2014
 		// TODO: Implement platform detection to check for specific manylinux support
-		// Investigate if it should prefer the highest version?
 		return strings.HasPrefix(platform, "manylinux") || strings.HasPrefix(platform, "linux")
 	default:
 		fmt.Printf("unknown OS: %s\n", goos)
@@ -161,11 +152,15 @@ func compatibleCPUArchitecture(platform, goarch string) bool {
 }
 
 // https://pythonwheels.com
-// TODO: Merge this and WheelFilename?
 type Wheel struct {
 	name     string // Canonical name
 	filename string
 	version  version.Version
+
+	build         string
+	pythonVersion string
+	abi           string
+	platform      string
 
 	// path is only set when the package has been made available on the filesystem.
 	path string
@@ -250,7 +245,6 @@ func (p *Wheel) Install(ctx context.Context) (string, error) {
 		}
 	}
 
-	// TODO: Make this atomic in the event of concurrent installs?
 	return installPath, nil
 }
 

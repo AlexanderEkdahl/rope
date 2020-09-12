@@ -84,9 +84,7 @@ func TestCLI(t *testing.T) {
 					expectedExitCode: 0,
 				},
 				{
-					// TODO: Figure out why a specific version of setuptools is required (used to not be the case).
-					// https://github.com/pypa/setuptools/issues/2353
-					args:             []string{"add", "tensorflow==2.2.0", "setuptools==49.6.0"},
+					args:             []string{"add", "tensorflow==2.2.0"},
 					expectedExitCode: 0,
 				},
 			},

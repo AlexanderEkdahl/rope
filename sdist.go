@@ -156,26 +156,20 @@ func (s *Sdist) convert(ctx context.Context) error {
 	}
 
 	filename := filepath.Base(matches[0])
-	fi, err := ParseWheelFilename(filename)
+	whl, err := ParseWheelFilename(filename)
 	if err != nil {
 		return err
 	}
 
-	if !fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+	if !whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
 		return fmt.Errorf("built source distribution is incompatible: '%s'", filename)
 	}
+	whl.path = matches[0]
 
-	// Cache resulting wheel
-	whl := &Wheel{
-		name:     fi.Name,
-		filename: filename,
-		version:  fi.Version,
-
-		path: matches[0],
-	}
 	if err := whl.extractDependencies(ctx); err != nil {
 		return fmt.Errorf("failed extracting dependencies from built wheel: %w", err)
 	}
+	// Cache resulting wheel
 	cachedPath, err := cache.AddWheel(whl, matches[0])
 	if err != nil {
 		return err
