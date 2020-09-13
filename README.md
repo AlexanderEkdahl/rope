@@ -67,6 +67,8 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 
 ## Initial release
 
+- Pypi offers a JSON API that exposes `requires_dist`...
+- [Bug] `rope add tfx` leads to the installation of `pydot-1.2` which can not be found
 - [Bug] `rope add pytz>=2017.2` installs the latest version of `pytz` not `2017.2`
 - Cache sdist downloads
 - Attempt to extract sdist dependencies from PKG-INFO

@@ -268,10 +268,11 @@ func (v Version) Unspecified() bool {
 // Compare returns an integer comparing two versions.
 // The result will be 0 if a==b, -1 if a < b, and +1 if a > b.
 func Compare(a, b Version) int {
+	if a.Wildcard || b.Wildcard {
+		panic("version.Compare called on version with wildcard")
+	}
+
 	compare := func(a, b Version) int {
-		if a.Equal(b) {
-			return 0
-		}
 
 		if a.Epoch > b.Epoch {
 			return 1
@@ -287,10 +288,6 @@ func Compare(a, b Version) int {
 			}
 		}
 
-		if a.Wildcard || b.Wildcard {
-			panic("version.Compare called on version with wildcard")
-		}
-
 		if a.PreReleasePhase > b.PreReleasePhase {
 			return 1
 		} else if a.PreReleasePhase < b.PreReleasePhase {
@@ -298,10 +295,14 @@ func Compare(a, b Version) int {
 		}
 		if a.PreReleaseVersion > b.PreReleaseVersion {
 			return 1
+		} else if a.PreReleaseVersion < b.PreReleaseVersion {
+			return -1
 		}
 
 		if a.PostReleaseVersion > b.PostReleaseVersion {
 			return 1
+		} else if a.PostReleaseVersion < b.PostReleaseVersion {
+			return -1
 		}
 
 		if !a.DevRelease && b.DevRelease {
@@ -311,9 +312,11 @@ func Compare(a, b Version) int {
 		}
 		if a.DevReleaseVersion > b.DevReleaseVersion {
 			return 1
+		} else if a.DevReleaseVersion < b.DevReleaseVersion {
+			return -1
 		}
 
-		return -1
+		return 0
 	}
 
 	if compare(b, a) != -1*compare(a, b) {
