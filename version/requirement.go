@@ -1,8 +1,7 @@
 package version
 
 import (
-	"strings"
-	"text/scanner"
+	"fmt"
 )
 
 // Version comparison operators
@@ -17,15 +16,17 @@ const (
 	TripleEqual     = "==="
 )
 
-type VersionRequirement struct {
+// Requirement defines a operator and a version.
+type Requirement struct {
 	Operator string
 	Version
 }
 
-func ParseVersionRequirements(input string) ([]VersionRequirement, error) {
-	var s scanner.Scanner
-	s.Init(strings.NewReader(input))
-	return scanVersionRequirements(&s)
+func (vr Requirement) String() string {
+	if vr.Version.Unspecified() {
+		return "<latest>"
+	}
+	return fmt.Sprintf("%s%s", vr.Operator, vr.Version)
 }
 
 // Minimal reads multiple versions requirements and tries to establish what
@@ -38,7 +39,7 @@ func ParseVersionRequirements(input string) ([]VersionRequirement, error) {
 //
 // The intention of this function is to extract the minimal version the
 // package was verified to work with.
-func Minimal(vrs []VersionRequirement) Version {
+func Minimal(vrs []Requirement) Version {
 	if len(vrs) == 0 {
 		return Version{}
 	}

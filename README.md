@@ -57,19 +57,21 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - https://classic.yarnpkg.com/blog/2017/07/11/lets-dev-a-package-manager/
 - https://github.com/pypa/wheel
 - https://research.swtch.com/vgo-mvs
+- https://github.com/pypa/packaging
 
 ### Relevant PEPs
 - https://www.python.org/dev/peps/pep-0427/
 - https://www.python.org/dev/peps/pep-0425/
 - https://www.python.org/dev/peps/pep-0440/
+- https://www.python.org/dev/peps/pep-0508/
 
 ### TODO
 
 ## Initial release
 
+- Use another directory for installed packages
 - Pypi offers a JSON API that exposes `requires_dist`...
 - [Bug] `rope add tfx` leads to the installation of `pydot-1.2` which can not be found
-- [Bug] `rope add pytz>=2017.2` installs the latest version of `pytz` not `2017.2`
 - Cache sdist downloads
 - Attempt to extract sdist dependencies from PKG-INFO
 - Support specified Python version
@@ -79,9 +81,11 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Somehow configure the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
 - GitHub Actions release process
 - Support PEP517 builds for projects that support it.
-- Use BigQuery to download a list of packages that are popular and don't have transitive dependencies(i.e. numpy) since checking PKG-INFO can not eliminate the possibility of there being transitive dependencies.
 - Should only extract dependencies from transitive dependencies if absolutely neccessary.
 - Support ABI in Wheel selection
+- Use `python` to get system metadata such as ABI version on-demand.
+- [Bug] Install dependencies in reverse order since `setup.py` may import transitive dependencies(and expose transitive dependencies on the PYTHONPATH) (`rope add nni`)
+- Add support for `~=` in dependency evaluation.
 
 ## Later
 

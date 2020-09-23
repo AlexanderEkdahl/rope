@@ -15,7 +15,7 @@ import (
 
 /*
 
-Files downloaded from an index are stored in the same way they would be stored
+Files downloaded from an index are cached in the same way they would be stored
 in a Python Package Repository (PEP 508). The cache also holds wheel packages
 that have been built from source distributions. The cache is not supposed to
 store downloaded source distributions as they should be converted to Python

@@ -38,7 +38,7 @@ type Version struct {
 var _ = Version{} == Version{}
 
 // https://www.python.org/dev/peps/pep-0440/#appendix-b-parsing-version-strings-with-regular-expressions
-// Minor modifications to allow '*' in release segment
+// Minor modification to allow '*' in release segment
 var re = regexp.MustCompile(`^v?(?:(?:(?P<epoch>[0-9]+)!)?(?P<release>[0-9]+(?:\.(?:[0-9]+|\*$))*)(?P<pre>[-_\.]?(?P<pre_l>(a|b|c|rc|alpha|beta|pre|preview))[-_\.]?(?P<pre_n>[0-9]+)?)?(?P<post>(?:-(?P<post_n1>[0-9]+))|(?:[-_\.]?(?P<post_l>post|rev|r)[-_\.]?(?P<post_n2>[0-9]+)?))?(?P<dev>[-_\.]?(?P<dev_l>dev)[-_\.]?(?P<dev_n>[0-9]+)?)?)(?:\+(?P<local>[a-z0-9]+(?:[-_\.][a-z0-9]+)*))?$`)
 
 // Parse parses a PEP 440 compatible version. If the version is invalid
@@ -135,6 +135,7 @@ func Parse(input string) (Version, bool) {
 	}, true
 }
 
+// MustParse parses the version and panics if the version cannot be parsed.
 func MustParse(input string) Version {
 	v, valid := Parse(input)
 	if !valid {
@@ -145,6 +146,10 @@ func MustParse(input string) Version {
 }
 
 func (v Version) String() string {
+	if v.Unspecified() {
+		return "<latest>"
+	}
+
 	return v.Canonical()
 }
 
@@ -208,10 +213,11 @@ func (v Version) Equal(v2 Version) bool {
 
 // Match returns true if the version v matches the version v2.
 // https://www.python.org/dev/peps/pep-0440/#version-matching
-// TODO: This should instead use []VersionRequirement in
-// order to more accurately find matching versions. When
-// the found version differs from the minimal version it will
-// be recorded in rope.json
+// TODO: This should instead use []Requirement in order to
+// more accurately find matching versions. When the found
+// version differs from the minimal version it will be
+// recorded in rope.json
+// TODO: Does this differentiate from Compare(v, v2) == 0?
 func (v Version) Match(v2 Version) bool {
 	if v.Epoch != v2.Epoch {
 		return false
@@ -236,7 +242,7 @@ func (v Version) Match(v2 Version) bool {
 		return false
 	}
 
-	// TODO: Match should be a method on VersionRequirement(or even []VersionRequirement)
+	// TODO: Match should be a method on Requirement(or even []Requirement)
 	// to accurately account for post-releases(and where an exact minimal version may not exist).
 	// // Special handling for when v is a post release
 	// if v.PostRelease {
@@ -268,12 +274,7 @@ func (v Version) Unspecified() bool {
 // Compare returns an integer comparing two versions.
 // The result will be 0 if a==b, -1 if a < b, and +1 if a > b.
 func Compare(a, b Version) int {
-	if a.Wildcard || b.Wildcard {
-		panic("version.Compare called on version with wildcard")
-	}
-
 	compare := func(a, b Version) int {
-
 		if a.Epoch > b.Epoch {
 			return 1
 		} else if a.Epoch < b.Epoch {
@@ -286,6 +287,11 @@ func Compare(a, b Version) int {
 			} else if a.Release[i] < b.Release[i] {
 				return -1
 			}
+		}
+		if a.Wildcard || b.Wildcard {
+			// If the epoch and release versions are a match and either version is a wildcard
+			// then the versions can be considered equivalent.
+			return 0
 		}
 
 		if a.PreReleasePhase > b.PreReleasePhase {
@@ -320,7 +326,7 @@ func Compare(a, b Version) int {
 	}
 
 	if compare(b, a) != -1*compare(a, b) {
-		// TODO: Remove this assertion once implementation is considered stable.
+		// TODO: Remove this assertion once the implementation is considered stable.
 		panic(fmt.Sprintf("version.Compare is not symmetric for a: %s, b: %s", a, b))
 	}
 

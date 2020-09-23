@@ -1,38 +1,47 @@
 package version
 
 import (
+	"fmt"
 	"testing"
 )
 
 func TestMinimal(t *testing.T) {
 	testCases := []struct {
-		input  string
+		input  []Requirement
 		output Version
 	}{
 		{
-			"<1.19.0, >=1.16.0",
+			[]Requirement{
+				{Less, MustParse("1.19.0")},
+				{GreaterOrEqual, MustParse("1.16.0")},
+			},
 			MustParse("1.16.0"),
 		},
 		{
-			"<1.3.4, >=1.3.6",
+			[]Requirement{
+				{Less, MustParse("1.3.4")},
+				{GreaterOrEqual, MustParse("1.3.6")},
+			},
 			MustParse("1.3.6"),
 		},
 		{
-			">=1.8.6",
+			[]Requirement{
+				{GreaterOrEqual, MustParse("1.8.6")},
+			},
 			MustParse("1.8.6"),
 		},
 		{
-			"!=2.0.*,<3,>=1.15",
+			[]Requirement{
+				{NotEqual, MustParse("2.0.*")},
+				{Less, MustParse("3")},
+				{GreaterOrEqual, MustParse("1.15")},
+			},
 			MustParse("1.15"),
 		},
 	}
 	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			vrs, err := ParseVersionRequirements(tc.input)
-			if err != nil {
-				t.Fatalf("unexpected error, got: %v", err)
-			}
-			if min := Minimal(vrs); !min.Equal(tc.output) {
+		t.Run(fmt.Sprintf("%s", tc.input), func(t *testing.T) {
+			if min := Minimal(tc.input); min != tc.output {
 				t.Fatalf("incorrect minimal version, got: %s, want: %s", min, tc.output)
 			}
 		})

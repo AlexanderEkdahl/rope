@@ -222,6 +222,7 @@ func Preferred(a, b Package) bool {
 
 func preferred(a, b *Wheel) bool {
 	// TODO: Expand preference logic
+	// Full preference order: https://www.python.org/dev/peps/pep-0425/#id1
 	if b.platform == "any" && a.platform != "any" {
 		return true
 	} else if a.platform == "any" && b.platform != "any" {

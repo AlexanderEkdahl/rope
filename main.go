@@ -35,6 +35,7 @@ The commands are:
 // TODO: Figure out how to better interact with this.
 // Abstract methods that needs this type of interaction into its own type.
 var cache *Cache
+var env *Environment
 
 // Should move the main package into a cli folder and let the top-level package be 'rope'
 // Which can be directly used in the test harness.
@@ -46,6 +47,9 @@ func run(args []string) (int, error) {
 
 	cache = &Cache{}
 	defer cache.Close()
+
+	// Lazy-loaded environment
+	env = &Environment{}
 
 	switch arg {
 	case "", "help", "--help", "-h":

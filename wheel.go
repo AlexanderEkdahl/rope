@@ -369,21 +369,27 @@ func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependenc
 	scanner := bufio.NewScanner(metadata)
 	for scanner.Scan() {
 		row := scanner.Text()
-		if strings.HasPrefix(row, "Requires-Dist: ") {
-			// Remove split as it is being handled by ParseDependencySpecification
-			dep, err := version.ParseDependencySpecification(strings.TrimPrefix(row, "Requires-Dist: "))
+		if strings.HasPrefix(row, "Requires-Dist:") {
+			row = strings.TrimPrefix(row, "Requires-Dist:")
+			dep, err := version.ParseDependency(row)
 			if err != nil {
-				// fmt.Printf("💀 %s(%v)\n", row, err)
+				fmt.Printf("❗️ %s:%s(%v)\n", p.name, row, err)
 				continue
 			}
-			if len(dep.Extras) > 0 {
-				// fmt.Printf("💀 %s(extras)\n", row)
+			install, err := dep.Evaluate(env)
+			if err != nil {
+				fmt.Printf("❗️ %s:%s(%v)\n", p.name, row, err)
 				continue
 			}
 
-			// fmt.Printf("🍀 %s %s(minimal = %s)\n", p.name, row, version.Minimal(dep.Versions))
+			if !install {
+				fmt.Printf("skipping %s:%s\n", p.name, row)
+				continue
+			}
+
+			fmt.Printf("🍀 %s:%s(minimal = %s)\n", p.name, row, version.Minimal(dep.Versions))
 			dependencies = append(dependencies, Dependency{
-				Name:    NormalizePackageName(dep.DistributionName),
+				Name:    NormalizePackageName(dep.Name),
 				Version: version.Minimal(dep.Versions),
 			})
 		}
