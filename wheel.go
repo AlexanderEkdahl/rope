@@ -45,110 +45,43 @@ func ParseWheelFilename(filename string) (*Wheel, error) {
 		return nil, fmt.Errorf("invalid version in wheel package name: '%s'", split[1])
 	}
 
+	// Expand the tag triples
+	tags := make([]string, 0)
+	for _, interpreter := range strings.Split(split[len(split)-3], ".") {
+		for _, abi := range strings.Split(split[len(split)-2], ".") {
+			for _, platform := range strings.Split(split[len(split)-1], ".") {
+				tags = append(tags, fmt.Sprintf("%s-%s-%s", interpreter, abi, platform))
+			}
+		}
+	}
+
 	return &Wheel{
 		name:     NormalizePackageName(split[0]),
 		filename: filename,
 		version:  v,
 
-		build:         build,
-		pythonVersion: split[len(split)-3],
-		abi:           split[len(split)-2],
-		platform:      split[len(split)-1],
+		build: build,
+		tags:  tags,
 	}, nil
 }
 
-func (p *Wheel) Compatible(pythonVersion, abi, goos, gorch string) bool {
-	if !CompatiblePython(p.pythonVersion, pythonVersion) {
-		return false
-	}
-
-	if !CompatibleABI(p.abi, abi) {
-		return false
-	}
-
-	if !CompatiblePlatform(p.platform, goos, gorch) {
-		return false
-	}
-
-	return true
+// Compatible returns true if the package is compatible with the given environment.
+func (p *Wheel) Compatible(env *Environment) bool {
+	return p.Preference(env) >= 0
 }
 
-// https://www.python.org/dev/peps/pep-0425/
-// The following functions should return how specific they are so that the most
-// specific version can be selected.
+// Preference returns the relative preference of a package. A higher value
+// indicates a higher preference.
+func (p *Wheel) Preference(env *Environment) int {
+	min := -1
 
-// CompatiblePython checks if two python versions are compatible.
-func CompatiblePython(candidateVersion, pythonVersion string) bool {
-	split := strings.Split(candidateVersion, ".")
-	if len(split) > 1 {
-		for _, part := range split {
-			if CompatiblePython(part, pythonVersion) {
-				return true
-			}
+	for _, tag := range p.tags {
+		if priority, _ := env.Priority(tag); priority > min {
+			min = priority
 		}
 	}
 
-	if candidateVersion == "py3" {
-		return true
-	}
-
-	if strings.HasPrefix(pythonVersion, candidateVersion) {
-		return true
-	}
-
-	return false
-}
-
-func CompatibleABI(candidate, abi string) bool {
-	return true
-}
-
-func CompatiblePlatform(platform, goos, goarch string) bool {
-	if platform == "any" {
-		return true
-	}
-
-	split := strings.Split(platform, ".")
-	if len(split) > 1 {
-		for _, part := range split {
-			if CompatiblePlatform(part, goos, goarch) {
-				return true
-			}
-		}
-	}
-
-	return compatibleOS(platform, goos) && compatibleCPUArchitecture(platform, goarch)
-}
-
-func compatibleOS(platform string, goos string) bool {
-	// TODO: Implement proper matching
-	switch goos {
-	case "darwin":
-		return strings.HasPrefix(platform, "macosx")
-	case "linux":
-		// https://www.python.org/dev/peps/pep-0513/
-		// https://www.python.org/dev/peps/pep-0571/
-		// https://www.python.org/dev/peps/pep-0599/
-		// matches manylinux1, manylinux2010, manylinux2014
-		// TODO: Implement platform detection to check for specific manylinux support
-		return strings.HasPrefix(platform, "manylinux") || strings.HasPrefix(platform, "linux")
-	default:
-		fmt.Printf("unknown OS: %s\n", goos)
-		return false
-	}
-}
-
-func compatibleCPUArchitecture(platform, goarch string) bool {
-	switch goarch {
-	case "amd64":
-		return strings.HasSuffix(platform, "x86_64") || strings.HasSuffix(platform, "amd64")
-	case "i386":
-		return strings.HasSuffix(platform, "i686")
-	case "arm64":
-		return strings.HasSuffix(platform, "aarch64")
-	default:
-		return false
-	}
+	return min
 }
 
 // https://pythonwheels.com
@@ -157,10 +90,8 @@ type Wheel struct {
 	filename string
 	version  version.Version
 
-	build         string
-	pythonVersion string
-	abi           string
-	platform      string
+	build string
+	tags  []string
 
 	// path is only set when the package has been made available on the filesystem.
 	path string
@@ -322,6 +253,10 @@ func (p *Wheel) fetch(ctx context.Context) error {
 
 	p.path = cachedPath
 	return nil
+}
+
+func (p *Wheel) setDependencies(dependencies []Dependency) {
+	p.dependencies = dependencies
 }
 
 func (p *Wheel) extractDependencies(ctx context.Context) error {

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -32,17 +31,11 @@ type Index struct {
 
 func (i *Index) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
 	name = NormalizePackageName(name)
-	// Search the local cache first
-	if wheel, err := cache.GetWheel(name, v); err != nil {
-		return nil, err
-	} else if cacheOnly, _ := strconv.ParseBool(os.Getenv("ROPE_CACHE_ONLY")); cacheOnly && wheel == nil {
-		return nil, fmt.Errorf("package not found in cache (ROPE_CACHE_ONLY is set)")
-	} else if wheel != nil {
-		// TODO: Packages found in the cache should also include dependencies
-		if err := wheel.extractDependencies(ctx); err != nil {
-			return nil, fmt.Errorf("extracting dependencies: %w", err)
-		}
 
+	wheel, err := checkCache(ctx, name, v)
+	if err != nil {
+		return nil, err
+	} else if wheel != nil {
 		return wheel, nil
 	}
 
@@ -108,16 +101,7 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 	if len(foundPackages) == 0 {
 		return nil, fmt.Errorf("compatible package not found")
 	}
-
-	// Multiple packages may match the version; select the preferred package
-	foundPackage := foundPackages[0]
-	for i := 1; i < len(foundPackages); i++ {
-		// This will select that last preferred package in the case of multiple
-		// packages being equally preferred.
-		if Preferred(foundPackages[i], foundPackage) {
-			foundPackage = foundPackages[i]
-		}
-	}
+	foundPackage := selectPrefered(foundPackages, env)
 
 	// If the original query did not specify a version, check the cache to see if
 	// the found package is already present in the cache.
@@ -151,85 +135,29 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 	}
 
 	filename := path.Base(url.Path)
-	switch {
-	case strings.HasSuffix(filename, ".whl"):
+	if strings.HasSuffix(filename, ".whl") {
 		whl, err := ParseWheelFilename(filename)
 		if err != nil {
 			return nil, false
 		}
-
-		if !whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-			return nil, false
-		}
 		whl.url = href
 
+		if !whl.Compatible(env) {
+			return nil, false
+		}
+
 		return whl, true
-	case strings.HasSuffix(filename, ".tar.gz"):
-		sdist, err := ParseSdistFilename(filename, ".tar.gz")
+	} else if sdistSuffix := sourceDistributionSuffix(filename); sdistSuffix != "" {
+		sdist, err := ParseSdistFilename(filename, sdistSuffix)
 		if err != nil {
 			return nil, false
 		}
 		sdist.url = href
 
 		return sdist, true
-	case strings.HasSuffix(filename, ".egg"):
-		return nil, false
-	case strings.HasSuffix(filename, ".exe"):
-		return nil, false
-	case strings.HasSuffix(filename, ".zip"):
-		sdist, err := ParseSdistFilename(filename, ".zip")
-		if err != nil {
-			return nil, false
-		}
-		sdist.url = href
-
-		return sdist, true
-	case strings.HasSuffix(filename, ".rpm"):
-		return nil, false
-	case strings.HasSuffix(filename, ".tar.bz2"):
-		return nil, false
-	case strings.HasSuffix(filename, ".tgz"):
-		sdist, err := ParseSdistFilename(filename, ".tgz")
-		if err != nil {
-			return nil, false
-		}
-		sdist.url = href
-
-		return sdist, true
-	case strings.HasSuffix(filename, ".msi"):
-		return nil, false
-	default:
-		fmt.Println("unknown distribution type:", filename)
+	} else {
 		return nil, false
 	}
-}
-
-// Preferred returns true if a should be the preferred package to install compared to b.
-func Preferred(a, b Package) bool {
-	aWheel, aIsWheel := a.(*Wheel)
-	bWheel, bIsWheel := b.(*Wheel)
-	if aIsWheel && !bIsWheel {
-		return true
-	} else if !aIsWheel && bIsWheel {
-		return false
-	} else if !aIsWheel && !bIsWheel {
-		// Both packages are source distributions. Prefer a over b for stability.
-		return true
-	}
-
-	return preferred(aWheel, bWheel)
-}
-
-func preferred(a, b *Wheel) bool {
-	// TODO: Expand preference logic
-	// Full preference order: https://www.python.org/dev/peps/pep-0425/#id1
-	if b.platform == "any" && a.platform != "any" {
-		return true
-	} else if a.platform == "any" && b.platform != "any" {
-		return false
-	}
-
-	return true
 }
 
 // LinkIndex is a simple form of an index such as:
@@ -242,17 +170,11 @@ type LinkIndex struct {
 // the index.
 func (i *LinkIndex) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
 	name = NormalizePackageName(name)
-	// Search the local cache first
-	if wheel, err := cache.GetWheel(name, v); err != nil {
-		return nil, err
-	} else if cacheOnly, _ := strconv.ParseBool(os.Getenv("ROPE_CACHE_ONLY")); cacheOnly && wheel == nil {
-		return nil, fmt.Errorf("package not found in cache (ROPE_CACHE_ONLY is set)")
-	} else if wheel != nil {
-		// TODO: Packages found in the cache should also include dependencies
-		if err := wheel.extractDependencies(ctx); err != nil {
-			return nil, fmt.Errorf("extracting dependencies: %w", err)
-		}
 
+	wheel, err := checkCache(ctx, name, v)
+	if err != nil {
+		return nil, err
+	} else if wheel != nil {
 		return wheel, nil
 	}
 
@@ -310,7 +232,7 @@ func (i *LinkIndex) FindPackage(ctx context.Context, name string, v version.Vers
 					return nil, err
 				}
 
-				if !whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+				if !whl.Compatible(env) {
 					continue
 				}
 
@@ -331,4 +253,75 @@ func (i *LinkIndex) FindPackage(ctx context.Context, name string, v version.Vers
 	}
 
 	return nil, nil
+}
+
+func checkCache(ctx context.Context, name string, v version.Version) (*Wheel, error) {
+	// TODO: Move this into the cache(and cache dependency list).
+	if wheel, err := cache.GetWheel(name, v); err != nil {
+		return nil, err
+	} else if cacheOnly, _ := strconv.ParseBool(os.Getenv("ROPE_CACHE_ONLY")); cacheOnly && wheel == nil {
+		return nil, fmt.Errorf("package not found in cache (ROPE_CACHE_ONLY is set)")
+	} else if wheel != nil {
+		// TODO: Packages found in the cache should also include dependencies
+		if err := wheel.extractDependencies(ctx); err != nil {
+			return nil, fmt.Errorf("extracting dependencies: %w", err)
+		}
+
+		return wheel, nil
+	}
+
+	return nil, nil
+}
+
+// Multiple packages may match a query; select the preferred package
+func selectPrefered(packages []Package, env *Environment) Package {
+	var p Package = packages[0]
+
+	for i := 1; i < len(packages); i++ {
+		// This will select that last preferred package in the case of multiple
+		// packages being equally preferred.
+		if preferred(packages[i], p, env) {
+			p = packages[i]
+		}
+	}
+
+	return p
+}
+
+// preferred returns true if a should be the preferred package to install compared to b.
+func preferred(a, b Package, env *Environment) bool {
+	aWheel, aIsWheel := a.(*Wheel)
+	bWheel, bIsWheel := b.(*Wheel)
+	if aIsWheel && !bIsWheel {
+		return true
+	} else if !aIsWheel && bIsWheel {
+		return false
+	} else if !aIsWheel && !bIsWheel {
+		// Both packages are source distributions. Prefer a over b for stability.
+		return true
+	}
+
+	return preferredWheel(aWheel, bWheel, env)
+}
+
+func preferredWheel(a, b *Wheel, env *Environment) bool {
+	return a.Preference(env) >= b.Preference(env)
+}
+
+// sourceDistributionSuffix returns the suffix of the source distribution or
+// an empty string if the filename is not associated with a common source
+// distribution.
+func sourceDistributionSuffix(filename string) string {
+	switch {
+	case strings.HasSuffix(filename, ".tar.gz"):
+		return ".tar.gz"
+	case strings.HasSuffix(filename, ".zip"):
+		return ".zip"
+	case strings.HasSuffix(filename, ".tar.bz2"):
+		return ".tar.bz2"
+	case strings.HasSuffix(filename, ".tgz"):
+		return ".tgz"
+	default:
+		return ""
+	}
 }

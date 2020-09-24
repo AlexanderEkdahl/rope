@@ -28,9 +28,8 @@ func add(timeout time.Duration, packages []string) error {
 		return err
 	}
 
-	index := &Index{
-		url: DefaultIndex,
-	}
+	// index := &Index{url: DefaultIndex}
+	index := &PyPI{}
 	for _, p := range packages {
 		d, err := version.ParseDependency(p)
 		if err != nil {

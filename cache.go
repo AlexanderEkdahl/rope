@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -82,7 +81,7 @@ func (c *Cache) GetWheel(name string, v version.Version) (*Wheel, error) {
 			}
 			whl.path = filepath.Join(dir, filename)
 
-			if whl.version.Equal(v) && whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
+			if whl.version.Equal(v) && whl.Compatible(env) {
 				fmt.Printf("✅\n")
 				return whl, nil
 			}

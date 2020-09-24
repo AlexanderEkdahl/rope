@@ -70,22 +70,24 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 ## Initial release
 
 - Use another directory for installed packages
-- Pypi offers a JSON API that exposes `requires_dist`...
-- [Bug] `rope add tfx` leads to the installation of `pydot-1.2` which can not be found
-- Cache sdist downloads
-- Attempt to extract sdist dependencies from PKG-INFO
-- Support specified Python version
+- Avoid uneccessarily installing sdist dependencies by prioritizing binary distributions
+- Avoid uneccessarily installing dependencies that are not reachable
+- Cache package requires_dist.
+- Cache sdist downloads(why?)
+- Support extracting sdist dependencies from PKG-INFO
+- Support specifying Python version
 - Demonstrate how rope can be used with Docker
-- Support for platform specific wheels across all platforms supported by Python
-- Support `pip -f` flag to build dependencies from other sources.
+- Support `pip -f` flag to build dependencies from other sources(WIP)
 - Somehow configure the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
 - GitHub Actions release process
 - Support PEP517 builds for projects that support it.
 - Should only extract dependencies from transitive dependencies if absolutely neccessary.
-- Support ABI in Wheel selection
-- Use `python` to get system metadata such as ABI version on-demand.
 - [Bug] Install dependencies in reverse order since `setup.py` may import transitive dependencies(and expose transitive dependencies on the PYTHONPATH) (`rope add nni`)
 - Add support for `~=` in dependency evaluation.
+- Instead of extracting a single `Minimal` from a list of requirements, use the full list to match possible candidates. Then use the minimal version found. In the event of unbounded requirements(i.e. `!= 1.2`) use the latest
+- [Investigate] `pandas: pytz (>=2011k)(invalid version '2011k')` Maybe 2011k should not be considered invalid?
+- Rename version constructs according to https://packaging.pypa.io/en/latest/
+- License
 
 ## Later
 

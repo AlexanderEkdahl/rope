@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/AlexanderEkdahl/rope/version"
@@ -53,6 +52,8 @@ type Sdist struct {
 	filename string
 	suffix   string
 
+	dependencies []Dependency
+
 	// url is only set when the package was found in a remote package repository.
 	url string
 
@@ -69,12 +70,11 @@ func (s *Sdist) Version() version.Version { return s.version }
 // Dependencies returns the transitive dependencies of this package. The only
 // reliable way of extra
 func (s *Sdist) Dependencies() []Dependency {
-	// if s.wheel == nil {
-	// 	panic("sdist dependencies: wheel not built")
-	// }
+	return s.dependencies
+}
 
-	// return s.wheel.dependencies
-	return nil
+func (s *Sdist) setDependencies(dependencies []Dependency) {
+	s.dependencies = dependencies
 }
 
 func (s *Sdist) extractDependencies(ctx context.Context) error {
@@ -161,8 +161,8 @@ func (s *Sdist) convert(ctx context.Context) error {
 		return err
 	}
 
-	if !whl.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-		return fmt.Errorf("built source distribution is incompatible: '%s'", filename)
+	if !whl.Compatible(env) {
+		return fmt.Errorf("built source distribution is incompatible with the current environment: '%s'", filename)
 	}
 	whl.path = matches[0]
 
