@@ -2,6 +2,7 @@ package version
 
 import (
 	"fmt"
+	"os"
 )
 
 // Version comparison operators
@@ -19,7 +20,7 @@ const (
 // Requirement defines a operator and a version.
 type Requirement struct {
 	Operator string
-	Version
+	Version  Version
 }
 
 func (vr Requirement) String() string {
@@ -27,6 +28,31 @@ func (vr Requirement) String() string {
 		return "<latest>"
 	}
 	return fmt.Sprintf("%s%s", vr.Operator, vr.Version)
+}
+
+func (vr Requirement) Contains(v Version) bool {
+	switch vr.Operator {
+	case LessOrEqual:
+		return Compare(v, vr.Version) <= 0
+	case Less:
+		return Compare(v, vr.Version) < 0
+	case NotEqual:
+		return Compare(v, vr.Version) != 0
+	case Equal:
+		return Compare(v, vr.Version) == 0
+	case GreaterOrEqual:
+		return Compare(v, vr.Version) >= 0
+	case Greater:
+		return Compare(v, vr.Version) > 0
+	case CompatibleEqual:
+		fmt.Fprintf(os.Stderr, "❗️ '~=' not supported")
+		return false
+	case TripleEqual:
+		// Treat === as equivalent to == (should be string equality)
+		return Compare(v, vr.Version) == 0
+	default:
+		panic(fmt.Sprintf("unknown version comparison operator: '%s'", vr.Operator))
+	}
 }
 
 // Minimal reads multiple versions requirements and tries to establish what
@@ -48,7 +74,7 @@ func Minimal(vrs []Requirement) Version {
 	for _, vr := range vrs {
 		switch vr.Operator {
 		case GreaterOrEqual, CompatibleEqual, Equal, TripleEqual:
-			if vr.GreaterThan(highestLowerBound) {
+			if vr.Version.GreaterThan(highestLowerBound) {
 				highestLowerBound = vr.Version
 			}
 		}

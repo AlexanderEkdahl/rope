@@ -52,7 +52,7 @@ func add(timeout time.Duration, packages []string) error {
 
 		p, err := index.FindPackage(ctx, d.Name, version)
 		if err != nil {
-			return fmt.Errorf("fetching '%s-%s': %w", d.Name, version, err)
+			return fmt.Errorf("finding '%s-%s': %w", d.Name, version, err)
 		}
 		project.Dependencies = append(project.Dependencies, Dependency{
 			Name:    p.Name(),

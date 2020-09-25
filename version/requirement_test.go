@@ -47,3 +47,10 @@ func TestMinimal(t *testing.T) {
 		})
 	}
 }
+
+func TestRequirementContains(t *testing.T) {
+	vr, _ := ParseVersionRequirements(">= 3.6")
+	if vr[0].Contains(MustParse("3.5")) {
+		t.Fatalf("did not expect >=3.6 to contain 3.5")
+	}
+}

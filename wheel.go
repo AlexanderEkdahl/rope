@@ -308,21 +308,19 @@ func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependenc
 			row = strings.TrimPrefix(row, "Requires-Dist:")
 			dep, err := version.ParseDependency(row)
 			if err != nil {
-				fmt.Printf("❗️ %s:%s(%v)\n", p.name, row, err)
+				fmt.Fprintf(os.Stderr, "❗️ %s:%s(%v)\n", p.name, row, err)
 				continue
 			}
 			install, err := dep.Evaluate(env)
 			if err != nil {
-				fmt.Printf("❗️ %s:%s(%v)\n", p.name, row, err)
+				fmt.Fprintf(os.Stderr, "❗️ %s:%s(%v)\n", p.name, row, err)
 				continue
 			}
-
 			if !install {
-				fmt.Printf("skipping %s:%s\n", p.name, row)
 				continue
 			}
 
-			fmt.Printf("🍀 %s:%s(minimal = %s)\n", p.name, row, version.Minimal(dep.Versions))
+			// fmt.Fprintf(os.Stderr, "🍀 %s:%s(minimal = %s)\n", p.name, row, version.Minimal(dep.Versions))
 			dependencies = append(dependencies, Dependency{
 				Name:    NormalizePackageName(dep.Name),
 				Version: version.Minimal(dep.Versions),

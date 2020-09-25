@@ -72,25 +72,30 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Use another directory for installed packages
 - Avoid uneccessarily installing sdist dependencies by prioritizing binary distributions
 - Avoid uneccessarily installing dependencies that are not reachable
+- Extract dependencies from source distributions
+- Should only extract dependencies from transitive dependencies if absolutely neccessary(lazy extraction).
 - Cache package requires_dist.
 - Cache sdist downloads(why?)
 - Support extracting sdist dependencies from PKG-INFO
 - Support specifying Python version
 - Demonstrate how rope can be used with Docker
-- Support `pip -f` flag to build dependencies from other sources(WIP)
+- Support `pip -f` flag to build dependencies from other sources
 - Somehow configure the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
 - GitHub Actions release process
 - Support PEP517 builds for projects that support it.
-- Should only extract dependencies from transitive dependencies if absolutely neccessary.
 - [Bug] Install dependencies in reverse order since `setup.py` may import transitive dependencies(and expose transitive dependencies on the PYTHONPATH) (`rope add nni`)
 - Add support for `~=` in dependency evaluation.
-- Instead of extracting a single `Minimal` from a list of requirements, use the full list to match possible candidates. Then use the minimal version found. In the event of unbounded requirements(i.e. `!= 1.2`) use the latest
-- [Investigate] `pandas: pytz (>=2011k)(invalid version '2011k')` Maybe 2011k should not be considered invalid?
+- Instead of extracting a single `Minimal` from a list of requirements, use the full list to match possible candidates. Then use the minimal version found. In the event of unbounded requirements(i.e. `!= 1.2`) use the latest version and mark the dependency as unbounded. This may cause issues as multiple dependencies may specify as specific dependency with conflicting requirements.
+- [Investigate] `pandas: pytz (>=2011k)(invalid version '2011k')` Maybe 2011k should not be considered invalid? Legacy version?
 - Rename version constructs according to https://packaging.pypa.io/en/latest/
 - License
+- Verify checksum for PyPI
+- Implement version selection exception in which pre-releases are only included if no other version matches.
+- [Bug] Using `python:3.4` and running `rope add tensorflow` results in `compatible package not found`.
 
 ## Later
 
+- Ensure good interoperability with https://github.com/pyenv/pyenv
 - Support upgrading specific dependencies
 - Support extras e.g. `pip install urllib3[secure]`
 - Parallelize version selection/installation process.

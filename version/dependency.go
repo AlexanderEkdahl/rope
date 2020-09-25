@@ -193,6 +193,12 @@ func ParseDependency(input string) (*Dependency, error) {
 	return d, nil
 }
 
+func ParseVersionRequirements(input string) ([]Requirement, error) {
+	p := &parser{s: input}
+
+	return versionRequirements(p)
+}
+
 func versionRequirement(p *parser) (Requirement, error) {
 	p.skipWhitespace()
 	op := p.expect(comparisonOps...)

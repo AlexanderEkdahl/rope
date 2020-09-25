@@ -8,10 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-)
 
-var (
-	ErrUnknownEnvironmentMarker = fmt.Errorf("invalid environment marker")
+	"github.com/AlexanderEkdahl/rope/version"
 )
 
 // Environment abstracts away interactions with the python environment.
@@ -20,8 +18,9 @@ type Environment struct {
 	init sync.Once
 	err  error
 
-	env  map[string]string
-	tags map[string]int
+	env    map[string]string
+	tags   map[string]int
+	python version.Version
 }
 
 // TODO: Respect license from https://github.com/pypa/wheel/blob/master/src/wheel/vendored/packaging/tags.py
@@ -769,7 +768,7 @@ func (e *Environment) Get(k string) (string, error) {
 
 	v, ok := e.env[k]
 	if !ok {
-		return "", ErrUnknownEnvironmentMarker
+		return "", fmt.Errorf("unknown environment marker: %s", k)
 	}
 
 	return v, nil
@@ -792,11 +791,36 @@ func (e *Environment) Priority(triple string) (int, error) {
 	return v, nil
 }
 
+func (e *Environment) SatisfiesPythonVersion(specifier string) (bool, error) {
+	if specifier == "" {
+		return true, nil
+	}
+
+	e.init.Do(e.resolveEnvironment)
+	if e.err != nil {
+		return false, e.err
+	}
+
+	vr, err := version.ParseVersionRequirements(specifier)
+	if err != nil {
+		return false, err
+	}
+
+	// Iterate through all version specifiers and ensure all conditions are met.
+	for _, v := range vr {
+		if !v.Contains(e.python) {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
 func (e *Environment) resolveEnvironment() {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "python3", "-c", environmentShim)
+	cmd := exec.CommandContext(ctx, "python", "-c", environmentShim)
 	output, err := cmd.Output()
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
@@ -821,6 +845,13 @@ func (e *Environment) resolveEnvironment() {
 		"python_full_version":            split[8],
 		"implementation_name":            split[9],
 		"implementation_version":         split[10],
+	}
+
+	var valid bool
+	e.python, valid = version.Parse(split[7])
+	if !valid {
+		e.err = fmt.Errorf("invalid python version: '%s'", split[7])
+		return
 	}
 
 	e.tags = make(map[string]int)

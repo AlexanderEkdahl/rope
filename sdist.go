@@ -129,7 +129,7 @@ func (s *Sdist) convert(ctx context.Context) error {
 	wheelPath := filepath.Join(tmp, "wheel")
 	installCmd := exec.CommandContext(
 		ctx,
-		"python3",
+		"python",
 		"-c",
 		setuptoolsShim,
 		"bdist_wheel",

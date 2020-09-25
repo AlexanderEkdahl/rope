@@ -225,9 +225,9 @@ func (i *LinkIndex) FindPackage(ctx context.Context, name string, v version.Vers
 			}
 
 			var p Package
-			switch {
-			case strings.HasSuffix(url.Path, ".whl"):
-				whl, err := ParseWheelFilename(path.Base(url.Path))
+			filename := path.Base(url.Path)
+			if strings.HasSuffix(filename, ".whl") {
+				whl, err := ParseWheelFilename(filename)
 				if err != nil {
 					return nil, err
 				}
@@ -237,10 +237,13 @@ func (i *LinkIndex) FindPackage(ctx context.Context, name string, v version.Vers
 				}
 
 				p = whl
-			default:
-				// Skip any other links
-				// TODO: Support .tar.gz distributions
-				continue
+			} else if suffix := sourceDistributionSuffix(filename); suffix != "" {
+				sdist, err := ParseSdistFilename(filename, suffix)
+				if err != nil {
+					return nil, err
+				}
+
+				p = sdist
 			}
 
 			if !p.Version().Equal(v) {
@@ -288,7 +291,10 @@ func selectPrefered(packages []Package, env *Environment) Package {
 	return p
 }
 
-// preferred returns true if a should be the preferred package to install compared to b.
+// preferred returns true if a should be the preferred distribution to install
+// compared to b. Binary distributions are preferred over source distributions
+// and competing binary distributions are compared using the specifity of the
+// tag.
 func preferred(a, b Package, env *Environment) bool {
 	aWheel, aIsWheel := a.(*Wheel)
 	bWheel, bIsWheel := b.(*Wheel)
@@ -301,16 +307,12 @@ func preferred(a, b Package, env *Environment) bool {
 		return true
 	}
 
-	return preferredWheel(aWheel, bWheel, env)
-}
-
-func preferredWheel(a, b *Wheel, env *Environment) bool {
-	return a.Preference(env) >= b.Preference(env)
+	return aWheel.Preference(env) >= bWheel.Preference(env)
 }
 
 // sourceDistributionSuffix returns the suffix of the source distribution or
 // an empty string if the filename is not associated with a common source
-// distribution.
+// distribution suffix.
 func sourceDistributionSuffix(filename string) string {
 	switch {
 	case strings.HasSuffix(filename, ".tar.gz"):

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"time"
 
@@ -16,14 +17,17 @@ import (
 // dependencies.
 type PyPI struct{}
 
+// FindPackage searches the PyPI repository for the specified package and version.
+// If the exact version can not be found the search is relaxed. This means that
+// the version of the returned package may not match the version v.
 func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) (Package, error) {
 	name = NormalizePackageName(name)
 
-	wheel, err := checkCache(ctx, name, v)
+	cachedWheel, err := checkCache(ctx, name, v)
 	if err != nil {
 		return nil, err
-	} else if wheel != nil {
-		return wheel, nil
+	} else if cachedWheel != nil {
+		return cachedWheel, nil
 	}
 
 	url := fmt.Sprintf("%s/pypi/%s/%s/json", PythonPackageIndex, name, v)
@@ -67,15 +71,15 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 			return nil, fmt.Errorf("decoding JSON response: %w", err)
 		}
 
-		newVersion, err := i.findMinimal(resData.Releases, v)
+		newVersion, err := i.findMin(resData.Releases, v)
 		if err != nil {
 			return nil, err
 		}
 
 		// When a package can not be found directly through the JSON api the search must be "relaxed".
 		// This can be done by searching for the package without a version selector and find the first
-		// version that matches the target version(by iterating the releases). Ensure this logic works
-		// the same as the "legacy" for whene an exact match can not be found.
+		// version that matches the target version(by iterating the releases).
+		// TODO: Ensure this logic works the same as the "legacy" for when an exact match can not be found.
 		return i.FindPackage(ctx, name, newVersion)
 	default:
 		return nil, fmt.Errorf("failed HTTP request: %s", res.Status)
@@ -90,7 +94,7 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 	// Relax the search in the same way as in the case for when a version
 	// can not be found.
 	if len(resData.URLs) == 0 {
-		newVersion, err := i.findMinimal(resData.Releases, v)
+		newVersion, err := i.findMin(resData.Releases, v)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +104,14 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 
 	var foundPackages []Package
 	for _, url := range resData.URLs {
-		if url.Packagetype == "bdist_wheel" {
+		if ok, err := env.SatisfiesPythonVersion(url.RequiresPython); err != nil {
+			return nil, err
+		} else if !ok {
+			continue
+		}
+
+		switch url.Packagetype {
+		case "bdist_wheel":
 			whl, err := ParseWheelFilename(url.Filename)
 			if err != nil {
 				return nil, err
@@ -112,7 +123,7 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 			}
 
 			foundPackages = append(foundPackages, whl)
-		} else if url.Packagetype == "sdist" {
+		case "sdist":
 			sdistSuffix := sourceDistributionSuffix(url.Filename)
 			if sdistSuffix == "" {
 				return nil, fmt.Errorf("unknown source distribution suffix for: '%s'", url.Filename)
@@ -125,12 +136,26 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 			sdist.url = url.URL
 
 			foundPackages = append(foundPackages, sdist)
-		} else {
-			fmt.Println("package_type:", url.Packagetype)
+		case "bdist_egg":
+			// ignore
+		default:
+			fmt.Fprintf(os.Stderr, "%s: unknown package type: '%s'\n", name, url.Packagetype)
 		}
 	}
 
 	if len(foundPackages) == 0 {
+		if v.Unspecified() {
+			// The Python environment is likely old. Therefore, find the
+			// maximum version that is supported.
+			newVersion, err := i.findMax(resData.Releases)
+			if err != nil {
+				return nil, err
+			}
+
+			fmt.Println("found alternative", newVersion)
+			return i.FindPackage(ctx, name, newVersion)
+		}
+
 		return nil, fmt.Errorf("compatible package not found")
 	}
 	foundPackage := selectPrefered(foundPackages, env)
@@ -142,21 +167,19 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 		for _, row := range resData.Info.RequiresDist {
 			dep, err := version.ParseDependency(row)
 			if err != nil {
-				fmt.Printf("❗️ %s: %s(%v)\n", name, row, err)
+				fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", name, row, err)
 				continue
 			}
 			install, err := dep.Evaluate(env)
 			if err != nil {
-				fmt.Printf("❗️ %s: %s(%v)\n", name, row, err)
+				fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", name, row, err)
 				continue
 			}
-
 			if !install {
-				fmt.Printf("skipping %s: %s\n", name, row)
 				continue
 			}
 
-			fmt.Printf("🍀 %s: %s(minimal = %s)\n", name, row, version.Minimal(dep.Versions))
+			// fmt.Fprintf(os.Stderr, "🍀 %s: %s(minimal = %s)\n", name, row, version.Minimal(dep.Versions))
 			dependencies = append(dependencies, Dependency{
 				Name:    NormalizePackageName(dep.Name),
 				Version: version.Minimal(dep.Versions),
@@ -168,33 +191,82 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 	return foundPackage, nil
 }
 
-// findMinimal finds the minimal version that is greater than or equal to the the given version min.
-func (i *PyPI) findMinimal(releasesJSON json.RawMessage, min version.Version) (version.Version, error) {
-	// Only interested in decoding the key which contain the version and to ensure that the
-	// specified version is not empty.
-	releases := map[string][]json.RawMessage{}
+// findMin finds the minimal version that is greater than or equal to the the given version min.
+func (i *PyPI) findMin(releasesJSON json.RawMessage, min version.Version) (version.Version, error) {
+	releases := map[string][]pypiRelease{}
 	if err := json.Unmarshal(releasesJSON, &releases); err != nil {
 		return version.Version{}, fmt.Errorf("unmarshalling releases: %w", err)
 	}
 
 	vs := make([]version.Version, 0, len(releases))
-	for k, r := range releases {
+	for k, release := range releases {
+		if len(release) == 0 {
+			continue
+		}
+
 		v, valid := version.Parse(k)
 		if !valid {
 			continue
 		}
 
-		if version.Compare(v, min) >= 0 && len(r) > 0 {
-			vs = append(vs, v)
+		if version.Compare(v, min) < 0 {
+			continue
 		}
+
+		if ok, _ := env.SatisfiesPythonVersion(release[0].RequiresPython); !ok {
+			continue
+		}
+
+		vs = append(vs, v)
 	}
 
 	if len(vs) == 0 {
 		return version.Version{}, ErrPackageNotFound
 	}
 
+	// TODO: This should only include preleases if nothing else matches
 	sort.Slice(vs, func(i, j int) bool {
 		return version.Compare(vs[i], vs[j]) < 0
+	})
+	return vs[0], nil
+}
+
+func (i *PyPI) findMax(releasesJSON json.RawMessage) (version.Version, error) {
+	releases := map[string][]pypiRelease{}
+	if err := json.Unmarshal(releasesJSON, &releases); err != nil {
+		return version.Version{}, fmt.Errorf("unmarshalling releases: %w", err)
+	}
+
+	vs := make([]version.Version, 0, len(releases))
+	for k, release := range releases {
+		if len(release) == 0 {
+			continue
+		}
+
+		v, valid := version.Parse(k)
+		if !valid {
+			continue
+		}
+
+		// TODO: Overly simplistic method of excluding pre-releases
+		if v.PreReleasePhase < 0 {
+			continue
+		}
+
+		if ok, _ := env.SatisfiesPythonVersion(release[0].RequiresPython); !ok {
+			continue
+		}
+
+		vs = append(vs, v)
+	}
+
+	if len(vs) == 0 {
+		return version.Version{}, ErrPackageNotFound
+	}
+
+	// TODO: This should only include preleases if nothing else matches
+	sort.Slice(vs, func(i, j int) bool {
+		return version.Compare(vs[i], vs[j]) > 0
 	})
 	return vs[0], nil
 }
