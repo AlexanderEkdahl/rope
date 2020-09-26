@@ -52,8 +52,6 @@ type Sdist struct {
 	filename string
 	suffix   string
 
-	dependencies []Dependency
-
 	// url is only set when the package was found in a remote package repository.
 	url string
 
@@ -67,14 +65,9 @@ func (s *Sdist) Name() string { return s.name }
 // Version returns the canonical version of the source distribution package.
 func (s *Sdist) Version() version.Version { return s.version }
 
-// Dependencies returns the transitive dependencies of this package. The only
-// reliable way of extra
+// Dependencies returns the transitive dependencies of this package.
 func (s *Sdist) Dependencies() []Dependency {
-	return s.dependencies
-}
-
-func (s *Sdist) setDependencies(dependencies []Dependency) {
-	s.dependencies = dependencies
+	return nil
 }
 
 func (s *Sdist) extractDependencies(ctx context.Context) error {
@@ -164,8 +157,8 @@ func (s *Sdist) convert(ctx context.Context) error {
 	if !whl.Compatible(env) {
 		return fmt.Errorf("built source distribution is incompatible with the current environment: '%s'", filename)
 	}
-	whl.path = matches[0]
 
+	whl.Path = matches[0]
 	if err := whl.extractDependencies(ctx); err != nil {
 		return fmt.Errorf("failed extracting dependencies from built wheel: %w", err)
 	}
@@ -174,7 +167,7 @@ func (s *Sdist) convert(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	whl.path = cachedPath
+	whl.Path = cachedPath
 
 	s.wheel = whl
 	return nil

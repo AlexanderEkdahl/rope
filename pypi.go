@@ -116,7 +116,9 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 			if err != nil {
 				return nil, err
 			}
-			whl.url = url.URL
+			whl.URL = url.URL
+			whl.RequiresDist = resData.Info.RequiresDist
+			whl.RequiresPython = url.RequiresPython
 
 			if !whl.Compatible(env) {
 				continue
@@ -145,8 +147,8 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 
 	if len(foundPackages) == 0 {
 		if v.Unspecified() {
-			// The Python environment is likely old. Therefore, find the
-			// maximum version that is supported.
+			// The version of the Python interpreter is likely unsupported.
+			// Try to find the maximum version that is supported.
 			newVersion, err := i.findMax(resData.Releases)
 			if err != nil {
 				return nil, err
@@ -158,37 +160,8 @@ func (i *PyPI) FindPackage(ctx context.Context, name string, v version.Version) 
 
 		return nil, fmt.Errorf("compatible package not found")
 	}
-	foundPackage := selectPrefered(foundPackages, env)
 
-	if p, ok := foundPackage.(interface {
-		setDependencies(dependencies []Dependency)
-	}); ok {
-		var dependencies []Dependency
-		for _, row := range resData.Info.RequiresDist {
-			dep, err := version.ParseDependency(row)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", name, row, err)
-				continue
-			}
-			install, err := dep.Evaluate(env)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", name, row, err)
-				continue
-			}
-			if !install {
-				continue
-			}
-
-			// fmt.Fprintf(os.Stderr, "🍀 %s: %s(minimal = %s)\n", name, row, version.Minimal(dep.Versions))
-			dependencies = append(dependencies, Dependency{
-				Name:    NormalizePackageName(dep.Name),
-				Version: version.Minimal(dep.Versions),
-			})
-		}
-		p.setDependencies(dependencies)
-	}
-
-	return foundPackage, nil
+	return selectPrefered(foundPackages, env), nil
 }
 
 // findMin finds the minimal version that is greater than or equal to the the given version min.

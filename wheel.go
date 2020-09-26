@@ -93,12 +93,13 @@ type Wheel struct {
 	build string
 	tags  []string
 
-	// path is only set when the package has been made available on the filesystem.
-	path string
-	// url is only set when the package was found in a remote package repository.
-	url string
+	// Path is only set when the package has been made available on the filesystem.
+	Path string
+	// URL is only set when the package was found in a remote package repository.
+	URL string
 
-	dependencies []Dependency
+	RequiresDist   []string
+	RequiresPython string
 }
 
 // Name returns the canonical name of the Wheel package.
@@ -110,8 +111,33 @@ func (p *Wheel) Version() version.Version {
 	return p.version
 }
 
+// TODO: Should take the environment as input
 func (p *Wheel) Dependencies() []Dependency {
-	return p.dependencies
+	var dependencies []Dependency
+
+	for _, row := range p.RequiresDist {
+		dep, err := version.ParseDependency(row)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", p.name, row, err)
+			continue
+		}
+		install, err := dep.Evaluate(env)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", p.name, row, err)
+			continue
+		}
+		if !install {
+			continue
+		}
+
+		// fmt.Fprintf(os.Stderr, "🍀 %s: %s(minimal = %s)\n", name, row, version.Minimal(dep.Versions))
+		dependencies = append(dependencies, Dependency{
+			Name:    NormalizePackageName(dep.Name),
+			Version: version.Minimal(dep.Versions),
+		})
+	}
+
+	return dependencies
 }
 
 // Install unpacks the wheel and returns the path to the installaction location.
@@ -120,7 +146,7 @@ func (p *Wheel) Install(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	filename := filepath.Base(p.path)
+	filename := filepath.Base(p.Path)
 
 	// TODO: UserConfigDir?
 	installPath := filepath.Join("./ropedir", "0", strings.TrimSuffix(filename, ".whl"))
@@ -134,7 +160,7 @@ func (p *Wheel) Install(ctx context.Context) (string, error) {
 	fmt.Println("installing wheel:", filename)
 
 	// TODO: Verify files as they are being read
-	whlFile, err := zip.OpenReader(p.path)
+	whlFile, err := zip.OpenReader(p.Path)
 	if err != nil {
 		return "", err
 	}
@@ -181,16 +207,16 @@ func (p *Wheel) Install(ctx context.Context) (string, error) {
 
 // fetch downloads the package from the remote index.
 func (p *Wheel) fetch(ctx context.Context) error {
-	if p.path != "" {
+	if p.Path != "" {
 		// wheel already fetched
 		return nil
 	}
 
-	if p.url == "" {
+	if p.URL == "" {
 		panic("wheel download: missing url")
 	}
 	fmt.Printf("Downloading %s\n", p.filename)
-	parsedURL, err := url.Parse(p.url)
+	parsedURL, err := url.Parse(p.URL)
 	if err != nil {
 		return err
 	}
@@ -199,7 +225,7 @@ func (p *Wheel) fetch(ctx context.Context) error {
 		return err
 	}
 
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url, nil)
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, p.URL, nil)
 	if err != nil {
 		return err
 	}
@@ -251,12 +277,8 @@ func (p *Wheel) fetch(ctx context.Context) error {
 		return err
 	}
 
-	p.path = cachedPath
+	p.Path = cachedPath
 	return nil
-}
-
-func (p *Wheel) setDependencies(dependencies []Dependency) {
-	p.dependencies = dependencies
 }
 
 func (p *Wheel) extractDependencies(ctx context.Context) error {
@@ -264,13 +286,12 @@ func (p *Wheel) extractDependencies(ctx context.Context) error {
 		return err
 	}
 
-	whlFile, err := zip.OpenReader(p.path)
+	whlFile, err := zip.OpenReader(p.Path)
 	if err != nil {
 		return err
 	}
 	defer whlFile.Close()
 
-	dependencies := []Dependency{}
 	var metadata *zip.File
 	for _, file := range whlFile.File {
 		// TODO: Verify contents of METADATA by also reading RECORD
@@ -288,48 +309,18 @@ func (p *Wheel) extractDependencies(ctx context.Context) error {
 	}
 	defer metadataFile.Close()
 
-	dependencies, err = p.extractDependenciesFromMetadata(metadataFile)
-	if err != nil {
-		return fmt.Errorf("extracting dependencies from METADATA: %w", err)
-	}
-
-	p.dependencies = dependencies
-	// Cache result in a newline delimited JSON file.
-	return nil
-}
-
-func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependency, error) {
-	dependencies := []Dependency{}
-
-	scanner := bufio.NewScanner(metadata)
+	scanner := bufio.NewScanner(metadataFile)
 	for scanner.Scan() {
 		row := scanner.Text()
+		// TODO: Extract requires-python
 		if strings.HasPrefix(row, "Requires-Dist:") {
-			row = strings.TrimPrefix(row, "Requires-Dist:")
-			dep, err := version.ParseDependency(row)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "❗️ %s:%s(%v)\n", p.name, row, err)
-				continue
-			}
-			install, err := dep.Evaluate(env)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "❗️ %s:%s(%v)\n", p.name, row, err)
-				continue
-			}
-			if !install {
-				continue
-			}
-
-			// fmt.Fprintf(os.Stderr, "🍀 %s:%s(minimal = %s)\n", p.name, row, version.Minimal(dep.Versions))
-			dependencies = append(dependencies, Dependency{
-				Name:    NormalizePackageName(dep.Name),
-				Version: version.Minimal(dep.Versions),
-			})
+			row = strings.TrimSpace(strings.TrimPrefix(row, "Requires-Dist:"))
+			p.RequiresDist = append(p.RequiresDist, row)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return err
 	}
 
-	return dependencies, nil
+	return nil
 }

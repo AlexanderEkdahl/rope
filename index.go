@@ -103,22 +103,17 @@ func (i *Index) FindPackage(ctx context.Context, name string, v version.Version)
 	}
 	foundPackage := selectPrefered(foundPackages, env)
 
-	// If the original query did not specify a version, check the cache to see if
-	// the found package is already present in the cache.
 	if v.Unspecified() {
-		if wheel, err := cache.GetWheel(name, foundPackage.Version()); err != nil {
+		// If the original query did not specify a version, check the cache to see if
+		// the found package is already present in the cache.
+		wheel, err := checkCache(ctx, name, foundPackage.Version())
+		if err != nil {
 			return nil, err
 		} else if wheel != nil {
-			// TODO: Packages found in the cache should also include dependencies
-			if err := wheel.extractDependencies(ctx); err != nil {
-				return nil, fmt.Errorf("extracting dependencies: %w", err)
-			}
-
 			return wheel, nil
 		}
 	}
 
-	// Cache the result of this in a JSON file to speed up interactions.
 	if p, ok := foundPackage.(interface{ extractDependencies(context.Context) error }); ok {
 		if err := p.extractDependencies(ctx); err != nil {
 			return nil, fmt.Errorf("extracting dependencies: %w", err)
@@ -140,7 +135,7 @@ func (i *Index) checkCompatability(href string) (Package, bool) {
 		if err != nil {
 			return nil, false
 		}
-		whl.url = href
+		whl.URL = href
 
 		if !whl.Compatible(env) {
 			return nil, false
@@ -265,11 +260,6 @@ func checkCache(ctx context.Context, name string, v version.Version) (*Wheel, er
 	} else if cacheOnly, _ := strconv.ParseBool(os.Getenv("ROPE_CACHE_ONLY")); cacheOnly && wheel == nil {
 		return nil, fmt.Errorf("package not found in cache (ROPE_CACHE_ONLY is set)")
 	} else if wheel != nil {
-		// TODO: Packages found in the cache should also include dependencies
-		if err := wheel.extractDependencies(ctx); err != nil {
-			return nil, fmt.Errorf("extracting dependencies: %w", err)
-		}
-
 		return wheel, nil
 	}
 

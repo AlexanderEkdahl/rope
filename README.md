@@ -81,7 +81,6 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Demonstrate how rope can be used with Docker
 - Support `pip -f` flag to build dependencies from other sources
 - Somehow configure the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
-- GitHub Actions release process
 - Support PEP517 builds for projects that support it.
 - [Bug] Install dependencies in reverse order since `setup.py` may import transitive dependencies(and expose transitive dependencies on the PYTHONPATH) (`rope add nni`)
 - Add support for `~=` in dependency evaluation.
@@ -89,12 +88,14 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - [Investigate] `pandas: pytz (>=2011k)(invalid version '2011k')` Maybe 2011k should not be considered invalid? Legacy version?
 - Rename version constructs according to https://packaging.pypa.io/en/latest/
 - License
-- Verify checksum for PyPI
 - Implement version selection exception in which pre-releases are only included if no other version matches.
 - [Bug] Using `python:3.4` and running `rope add tensorflow` results in `compatible package not found`.
+- [Bug] `requires_dist` is not populated for packages downloaded from the legacy index due to dependencies being extracted *after* caching.
 
 ## Later
 
+- Verify checksum for PyPI
+- GitHub Actions release process
 - Ensure good interoperability with https://github.com/pyenv/pyenv
 - Support upgrading specific dependencies
 - Support extras e.g. `pip install urllib3[secure]`
@@ -103,6 +104,7 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - Top-level version exclusions: https://research.swtch.com/vgo-mvs
 - Support a mode where it will not write to the ropefile and fail any command that tries to do so.
 - Top-level replace directive for developing local packages.
+- Lock cache during interaction(except for when cache is disabled).
 - Verify files have not been tampered with using the RECORD
 - Windows support
 - Warn users about explicit incompatabilities(`rope show`)

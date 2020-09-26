@@ -1,6 +1,7 @@
 package version
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -331,4 +332,27 @@ func Compare(a, b Version) int {
 	}
 
 	return compare(a, b)
+}
+
+func (v *Version) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+
+	var valid bool
+	*v, valid = Parse(s)
+	if !valid {
+		return fmt.Errorf("unmarshaling invalid version: '%s'", s)
+	}
+
+	return nil
+}
+
+func (v Version) MarshalJSON() ([]byte, error) {
+	if v.Unspecified() {
+		return nil, fmt.Errorf("marshaling unspecified version")
+	}
+
+	return json.Marshal(v.Canonical())
 }
