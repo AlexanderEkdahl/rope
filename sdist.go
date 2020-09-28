@@ -2,6 +2,8 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -12,19 +14,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
-func ParseSdistFilename(filename string) (*Sdist, error) {
-	// TODO: Support more sdist formats
+// ParseSdistFilename returns a Sdist package from a given filename
+func ParseSdistFilename(filename, suffix string) (*Sdist, error) {
 	sep := strings.LastIndex(filename, "-")
 	if sep < 0 {
-		return nil, fmt.Errorf("expected sdist .tar.gz file to <name>-<version>.tar.gz, got: %s", filename)
+		return nil, fmt.Errorf("expected sdist filename to be <name>-<version>%s, got: %s", suffix, filename)
 	}
-	versionString := strings.TrimSuffix(filename, ".tar.gz")[sep+1:]
+	versionString := strings.TrimSuffix(filename, suffix)[sep+1:]
 
 	v, valid := version.Parse(versionString)
 	if !valid {
@@ -35,7 +36,7 @@ func ParseSdistFilename(filename string) (*Sdist, error) {
 		name:     NormalizePackageName(filename[:sep]),
 		version:  v,
 		filename: filename,
-		suffix:   ".tar.gz",
+		suffix:   suffix,
 	}, nil
 }
 
@@ -49,7 +50,7 @@ type Sdist struct {
 	name     string // Canonical name
 	version  version.Version
 	filename string
-	suffix   string // TODO: Support other suffixes for source distributions.
+	suffix   string
 
 	// url is only set when the package was found in a remote package repository.
 	url string
@@ -64,14 +65,8 @@ func (s *Sdist) Name() string { return s.name }
 // Version returns the canonical version of the source distribution package.
 func (s *Sdist) Version() version.Version { return s.version }
 
-// Dependencies returns the transitive dependencies of this package. The only
-// reliable way of extra
+// Dependencies returns the transitive dependencies of this package.
 func (s *Sdist) Dependencies() []Dependency {
-	// if s.wheel == nil {
-	// 	panic("sdist dependencies: wheel not built")
-	// }
-
-	// return s.wheel.dependencies
 	return nil
 }
 
@@ -108,6 +103,77 @@ func (s *Sdist) convert(ctx context.Context) error {
 	}
 	defer os.RemoveAll(tmp)
 
+	switch s.suffix {
+	case ".tar.gz", ".tgz":
+		if err := s.untar(body, tmp); err != nil {
+			return err
+		}
+	case ".zip":
+		if err := s.unzip(body, tmp); err != nil {
+			return err
+		}
+	}
+
+	root := filepath.Join(tmp, strings.TrimSuffix(s.filename, s.suffix))
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("invalid source distribution: expected %s to exist after extraction", root)
+	}
+
+	wheelPath := filepath.Join(tmp, "wheel")
+	installCmd := exec.CommandContext(
+		ctx,
+		"python",
+		"-c",
+		setuptoolsShim,
+		"bdist_wheel",
+		"-d",
+		wheelPath,
+	)
+	installCmd.Dir = root
+	// Ensure command is not inherenting PYTHONPATH which may inadvertendely
+	// use a version of system dependencies that is too old due to a minimal
+	// version selected by this program...
+	installCmd.Env = append(os.Environ(), "PYTHONPATH=")
+	output, err := installCmd.CombinedOutput()
+	if err != nil {
+		fmt.Println(string(output))
+		return err
+	}
+
+	matches, err := filepath.Glob(filepath.Join(wheelPath, "*.whl"))
+	if err != nil {
+		return err
+	}
+	if len(matches) != 1 {
+		return fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
+	}
+
+	filename := filepath.Base(matches[0])
+	whl, err := ParseWheelFilename(filename)
+	if err != nil {
+		return err
+	}
+
+	if !whl.Compatible(env) {
+		return fmt.Errorf("built source distribution is incompatible with the current environment: '%s'", filename)
+	}
+
+	whl.Path = matches[0]
+	if err := whl.extractDependencies(ctx); err != nil {
+		return fmt.Errorf("failed extracting dependencies from built wheel: %w", err)
+	}
+	// Cache resulting wheel
+	cachedPath, err := cache.AddWheel(whl, matches[0])
+	if err != nil {
+		return err
+	}
+	whl.Path = cachedPath
+
+	s.wheel = whl
+	return nil
+}
+
+func (s *Sdist) untar(body io.Reader, tmp string) error {
 	gzipReader, err := gzip.NewReader(body)
 	if err != nil {
 		return err
@@ -145,68 +211,51 @@ func (s *Sdist) convert(ctx context.Context) error {
 			}
 		}
 	}
-	tarRoot := filepath.Join(tmp, strings.TrimSuffix(s.filename, s.suffix))
-	if _, err := os.Stat(tarRoot); errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("invalid source distribution: expected %s to exist after extraction", tarRoot)
-	}
 
-	wheelPath := filepath.Join(tmp, "wheel")
-	installCmd := exec.CommandContext(
-		ctx,
-		"python3",
-		"-c",
-		setuptoolsShim,
-		"bdist_wheel",
-		"-d",
-		wheelPath,
-	)
-	installCmd.Dir = tarRoot
-	// Ensure command is not inherenting PYTHONPATH which may inadvertendely
-	// use a version of system dependencies that is too old due to a minimal
-	// version selected by this program...
-	installCmd.Env = append(os.Environ(), "PYTHONPATH=")
-	output, err := installCmd.CombinedOutput()
-	if err != nil {
-		fmt.Println(string(output))
+	return nil
+}
+
+func (s *Sdist) unzip(body io.Reader, tmp string) error {
+	// Risks using too much memory by using a memory backed buffer as intermediate storage.
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, body); err != nil {
 		return err
 	}
 
-	matches, err := filepath.Glob(filepath.Join(wheelPath, "*.whl"))
-	if err != nil {
-		return err
-	}
-	if len(matches) != 1 {
-		return fmt.Errorf("expected a single .whl file to be in: %s", wheelPath)
-	}
-
-	filename := filepath.Base(matches[0])
-	fi, err := ParseWheelFilename(filename)
+	r, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
 		return err
 	}
 
-	if !fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-		return fmt.Errorf("built source distribution is incompatible")
+	for _, file := range r.File {
+		f, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		target := filepath.Join(tmp, file.Name)
+		if err := os.MkdirAll(filepath.Dir(target), 0777); err != nil {
+			return err
+		}
+
+		dst, err := os.Create(target)
+		if err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(dst, f); err != nil {
+			return err
+		}
+
+		if err := f.Close(); err != nil {
+			return err
+		}
 	}
 
-	// Cache resulting wheel
-	whl := &Wheel{
-		name:     fi.Name,
-		filename: filename,
-		version:  fi.Version,
-
-		path: matches[0],
-	}
-	if err := whl.extractDependencies(ctx); err != nil {
-		return fmt.Errorf("failed extracting dependencies from built wheel: %w", err)
-	}
-	cachedPath, err := cache.AddWheel(whl, matches[0])
-	if err != nil {
-		return err
-	}
-	whl.path = cachedPath
-
-	s.wheel = whl
 	return nil
 }
 

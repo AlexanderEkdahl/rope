@@ -2,10 +2,6 @@
 
 Experimental package manager for Python.
 
-- Parallel downloads and package installation
-- Optimized for Docker
-- Fast version selection algorithm
-
 ## Usage
 
 ``` bash
@@ -61,41 +57,57 @@ docker build -t rope_integration -f Dockerfile-integration . && docker run --rm 
 - https://classic.yarnpkg.com/blog/2017/07/11/lets-dev-a-package-manager/
 - https://github.com/pypa/wheel
 - https://research.swtch.com/vgo-mvs
+- https://github.com/pypa/packaging
 
 ### Relevant PEPs
 - https://www.python.org/dev/peps/pep-0427/
 - https://www.python.org/dev/peps/pep-0425/
 - https://www.python.org/dev/peps/pep-0440/
+- https://www.python.org/dev/peps/pep-0508/
 
 ### TODO
 
-- Return the most compatible version if multiple version are available.
-    - `rope add numpy` downloads 2 versions of numpy(due to unstable package selection)
-    - `rope add six` downloads a sdist and a wheel(due to unstable package selection)
-- Parallelize version selection/installation process.
-- Support for platform specific wheels across all platforms supported by Python
-- Written package folders should be write protected to prevent inadvertendly changing files for other projects/users(match go modules)
+## Initial release
+
+- Use another directory for installed packages
+- Avoid uneccessarily installing sdist dependencies by prioritizing binary distributions
+- Avoid uneccessarily installing dependencies that are not reachable
+- Extract dependencies from source distributions
+- Should only extract dependencies from transitive dependencies if absolutely neccessary(lazy extraction).
+- Cache package requires_dist.
+- Cache sdist downloads(why?)
+- Support extracting sdist dependencies from PKG-INFO
+- Support specifying Python version
 - Demonstrate how rope can be used with Docker
-- Top-level version exclusions: https://research.swtch.com/vgo-mvs
+- Support `pip -f` flag to build dependencies from other sources
+- Somehow configure the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
+- Support PEP517 builds for projects that support it.
+- [Bug] Install dependencies in reverse order since `setup.py` may import transitive dependencies(and expose transitive dependencies on the PYTHONPATH) (`rope add nni`)
+- Add support for `~=` in dependency evaluation.
+- Instead of extracting a single `Minimal` from a list of requirements, use the full list to match possible candidates. Then use the minimal version found. In the event of unbounded requirements(i.e. `!= 1.2`) use the latest version and mark the dependency as unbounded. This may cause issues as multiple dependencies may specify as specific dependency with conflicting requirements.
+- [Investigate] `pandas: pytz (>=2011k)(invalid version '2011k')` Maybe 2011k should not be considered invalid? Legacy version?
+- Rename version constructs according to https://packaging.pypa.io/en/latest/
+- License
+- Implement version selection exception in which pre-releases are only included if no other version matches.
+- [Bug] Using `python:3.4` and running `rope add tensorflow` results in `compatible package not found`.
+- [Bug] `requires_dist` is not populated for packages downloaded from the legacy index due to dependencies being extracted *after* caching.
+
+## Later
+
+- Verify checksum for PyPI
+- GitHub Actions release process
+- Ensure good interoperability with https://github.com/pyenv/pyenv
+- Support upgrading specific dependencies
 - Support extras e.g. `pip install urllib3[secure]`
-- Support `pip -f` flag to build dependencies from other sources.
+- Parallelize version selection/installation process.
+- Written package folders should be write protected to prevent inadvertendly changing files for other projects/users(match go modules)
+- Top-level version exclusions: https://research.swtch.com/vgo-mvs
 - Support a mode where it will not write to the ropefile and fail any command that tries to do so.
-- Somehow store the Python interpreter path for each project...(for sdist and platform discovery) or automatically try and find a compatible Python distribution.
-- Support specified Python version
 - Top-level replace directive for developing local packages.
+- Lock cache during interaction(except for when cache is disabled).
 - Verify files have not been tampered with using the RECORD
 - Windows support
-- Use https://warehouse.pypa.io/api-reference/json/ for faster(?) dependency search with additional metadata.
-- GitHub Actions release process
-- Ensure all packages found at https://johnfraney.ca/posts/2019/11/19/pipenv-poetry-benchmarks-ergonomics-2/ can be installed.
-- If the ropefile listed all architectures that all dependencies must resolve for it can ensure upfront that it is possible
 - Warn users about explicit incompatabilities(`rope show`)
 - Support --no-binary package installs
-- `rope add pytz>=2017.2` installs the latest version of `pytz` not `2017.2`
-- `rope export` is taking longer than it should. Is it doing network calls?
-- Use a memory backed buffer for downloads(up to a point). Use BigQuery to find suitable limit
 - An alternative approach to creating an entry in PYTHONPATH for every dependency is to create an ephemeral directory with symlinks to every dependency.
-- Support PEP517 builds for projects that support it.
-- Attempt to extract sdist dependencies from PKG-INFO
-- Cache sdist downloads
-- Use BigQuery to download a list of packages that are popular and don't have transitive dependencies(i.e. numpy) since checking PKG-INFO can not eliminate the possibility of there being transitive dependencies.
+- Connection retries.

@@ -1,13 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"sync"
 
 	"github.com/AlexanderEkdahl/rope/version"
@@ -15,7 +15,7 @@ import (
 
 /*
 
-Files downloaded from an index are stored in the same way they would be stored
+Files downloaded from an index are cached in the same way they would be stored
 in a Python Package Repository (PEP 508). The cache also holds wheel packages
 that have been built from source distributions. The cache is not supposed to
 store downloaded source distributions as they should be converted to Python
@@ -62,52 +62,68 @@ func (c *Cache) GetWheel(name string, v version.Version) (*Wheel, error) {
 		return nil, c.err
 	}
 
-	dir := c.getPath(name)
-	entries, err := ioutil.ReadDir(dir)
+	ciFile, err := os.Open(filepath.Join(c.getPath(name), "index.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		fmt.Printf("⛔️\n")
 		return nil, nil
 	} else if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening cache index: %w", err)
 	}
+	defer ciFile.Close()
 
-	for _, cachedDownload := range entries {
-		filename := cachedDownload.Name()
+	dec := json.NewDecoder(ciFile)
+	for {
+		var ci cacheIndex
+		err := dec.Decode(&ci)
+		if err == io.EOF {
+			fmt.Printf("⛔️\n")
+			return nil, nil
+		} else if err != nil {
+			return nil, fmt.Errorf("decoding cache index line: %w", err)
+		}
 
-		// Only search for .whl files.
-		if strings.HasSuffix(filename, ".whl") {
-			fi, err := ParseWheelFilename(filename)
-			if err != nil {
-				return nil, err
-			}
+		whl, err := ParseWheelFilename(ci.Filename)
+		if err != nil {
+			return nil, err
+		}
+		whl.Path = filepath.Join(c.getPath(name), ci.Filename)
+		whl.RequiresDist = ci.RequiresDist
+		whl.RequiresPython = ci.RequiresPython
 
-			if fi.Version.Equal(v) && fi.Compatible("cp37", "", runtime.GOOS, runtime.GOARCH) {
-				fmt.Printf("✅\n")
-				return &Wheel{
-					name:     fi.Name,
-					filename: filename,
-					version:  fi.Version,
-
-					path: filepath.Join(dir, filename),
-				}, nil
-			}
+		if whl.version.Equal(v) && whl.Compatible(env) {
+			fmt.Printf("✅\n")
+			return whl, nil
 		}
 	}
-	fmt.Printf("⛔️\n")
-
-	return nil, nil
 }
 
 // AddWheel moves the Python Wheel located at path to the cache.
 // TODO: Full URL from the index should be part of the cache path.
 func (c *Cache) AddWheel(w *Wheel, path string) (string, error) {
 	c.once.Do(c.setup)
-	newpath := filepath.Join(c.getPath(w.name), w.filename)
 
-	if err := os.MkdirAll(filepath.Dir(newpath), 0777); err != nil {
+	if err := os.MkdirAll(c.getPath(w.name), 0777); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
+	ciFile, err := os.OpenFile(filepath.Join(c.getPath(w.name), "index.json"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0)
+	if err != nil {
+		return "", fmt.Errorf("opening cache index: %w", err)
+	}
+	defer ciFile.Close()
+
+	enc := json.NewEncoder(ciFile)
+	enc.SetEscapeHTML(false)
+
+	if err := enc.Encode(cacheIndex{
+		Filename:       w.filename,
+		RequiresDist:   w.RequiresDist,
+		RequiresPython: w.RequiresPython,
+	}); err != nil {
+		return "", fmt.Errorf("encoding cache index line: %w", err)
+	}
+
+	newpath := filepath.Join(c.getPath(w.name), w.filename)
 	if err := os.Rename(path, newpath); err != nil {
 		return "", fmt.Errorf("moving item to cache: %w", err)
 	}
@@ -150,8 +166,15 @@ func (c *Cache) Close() error {
 		setup = false
 	})
 	if setup && c.Temporary {
-		os.RemoveAll(c.Path)
+		return os.RemoveAll(c.Path)
 	}
 
 	return nil
+}
+
+type cacheIndex struct {
+	Filename       string   `json:"file"`
+	RequiresDist   []string `json:"requires_dist"`
+	RequiresPython string   `json:"requires_python"`
+	// Sum            string   `json:"sum"` // TODO
 }

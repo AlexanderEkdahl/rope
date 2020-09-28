@@ -28,17 +28,21 @@ func add(timeout time.Duration, packages []string) error {
 		return err
 	}
 
-	index := &Index{
-		url: DefaultIndex,
-	}
+	// index := &Index{url: DefaultIndex}
+	index := &PyPI{}
 	for _, p := range packages {
-		d, err := version.ParseDependencySpecification(p)
+		d, err := version.ParseDependency(p)
 		if err != nil {
 			return err
 		}
 
 		if len(d.Versions) > 1 {
-			return fmt.Errorf("expected at most a single version, got: %s", d.Versions)
+			return fmt.Errorf("expected at most a single version, got: %d", len(d.Versions))
+		}
+
+		if len(d.Extras) > 0 {
+			// TODO: Support extras
+			return fmt.Errorf("extras not supported")
 		}
 
 		var version version.Version
@@ -46,9 +50,9 @@ func add(timeout time.Duration, packages []string) error {
 			version = d.Versions[0].Version
 		}
 
-		p, err := index.FindPackage(ctx, d.DistributionName, version)
+		p, err := index.FindPackage(ctx, d.Name, version)
 		if err != nil {
-			return fmt.Errorf("fetching '%s-%s': %w", d.DistributionName, version, err)
+			return fmt.Errorf("finding '%s-%s': %w", d.Name, version, err)
 		}
 		project.Dependencies = append(project.Dependencies, Dependency{
 			Name:    p.Name(),

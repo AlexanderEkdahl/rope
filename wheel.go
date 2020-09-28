@@ -21,158 +21,85 @@ import (
 	"github.com/AlexanderEkdahl/rope/version"
 )
 
+// ParseWheelFilename instantiates a Wheel from a given filename.
 // https://www.python.org/dev/peps/pep-0427/#file-name-convention
-type WheelFilename struct {
-	// TODO: Merge this with Wheel like Sdist
-	Name          string
-	Version       version.Version
-	Build         string
-	PythonVersion string
-	ABI           string
-	Platform      string
-}
-
-func ParseWheelFilename(filename string) (WheelFilename, error) {
+func ParseWheelFilename(filename string) (*Wheel, error) {
 	trim := strings.TrimSuffix(filename, ".whl")
 	if filename == trim {
-		return WheelFilename{}, fmt.Errorf("not a wheel")
+		return nil, fmt.Errorf("not a wheel")
 	}
 
 	build := ""
 	split := strings.Split(trim, "-")
 	switch {
 	case len(split) < 5:
-		return WheelFilename{}, fmt.Errorf("expected wheel to be in at least 5 parts, got: %s", filename)
+		return nil, fmt.Errorf("expected wheel to be in at least 5 parts, got: %s", filename)
 	case len(split) == 6:
 		build = split[2]
 	case len(split) > 6:
-		return WheelFilename{}, fmt.Errorf("expected wheel to be in at most 6 parts, got: %s", filename)
+		return nil, fmt.Errorf("expected wheel to be in at most 6 parts, got: %s", filename)
 	}
 
 	v, valid := version.Parse(split[1])
 	if !valid {
-		return WheelFilename{}, fmt.Errorf("invalid version in wheel package name: '%s'", split[1])
+		return nil, fmt.Errorf("invalid version in wheel package name: '%s'", split[1])
 	}
 
-	return WheelFilename{
-		Name:          NormalizePackageName(split[0]),
-		Version:       v,
-		Build:         build,
-		PythonVersion: split[len(split)-3],
-		ABI:           split[len(split)-2],
-		Platform:      split[len(split)-1],
+	// Expand the tag triples
+	tags := make([]string, 0)
+	for _, interpreter := range strings.Split(split[len(split)-3], ".") {
+		for _, abi := range strings.Split(split[len(split)-2], ".") {
+			for _, platform := range strings.Split(split[len(split)-1], ".") {
+				tags = append(tags, fmt.Sprintf("%s-%s-%s", interpreter, abi, platform))
+			}
+		}
+	}
+
+	return &Wheel{
+		name:     NormalizePackageName(split[0]),
+		filename: filename,
+		version:  v,
+
+		build: build,
+		tags:  tags,
 	}, nil
 }
 
-func (fi *WheelFilename) Compatible(pythonVersion, abi, goos, gorch string) bool {
-	if !CompatiblePython(fi.PythonVersion, pythonVersion) {
-		return false
-	}
-
-	if !CompatibleABI(fi.ABI, abi) {
-		return false
-	}
-
-	if !CompatiblePlatform(fi.Platform, goos, gorch) {
-		return false
-	}
-
-	return true
+// Compatible returns true if the package is compatible with the given environment.
+func (p *Wheel) Compatible(env *Environment) bool {
+	return p.Preference(env) >= 0
 }
 
-// https://www.python.org/dev/peps/pep-0425/
-// The following functions should return how specific they are so that the most
-// specific version can be selected.
+// Preference returns the relative preference of a package. A higher value
+// indicates a higher preference.
+func (p *Wheel) Preference(env *Environment) int {
+	min := -1
 
-// CompatiblePython checks if two python versions are compatible.
-func CompatiblePython(candidateVersion, pythonVersion string) bool {
-	split := strings.Split(candidateVersion, ".")
-	if len(split) > 1 {
-		for _, part := range split {
-			if CompatiblePython(part, pythonVersion) {
-				return true
-			}
+	for _, tag := range p.tags {
+		if priority, _ := env.Priority(tag); priority > min {
+			min = priority
 		}
 	}
 
-	if candidateVersion == "py3" {
-		return true
-	}
-
-	if strings.HasPrefix(pythonVersion, candidateVersion) {
-		return true
-	}
-
-	return false
-}
-
-func CompatibleABI(candidate, abi string) bool {
-	return true
-}
-
-// TODO: Rank by specificity
-func CompatiblePlatform(platform, goos, goarch string) bool {
-	if platform == "any" {
-		return true
-	}
-
-	split := strings.Split(platform, ".")
-	if len(split) > 1 {
-		for _, part := range split {
-			if CompatiblePlatform(part, goos, goarch) {
-				return true
-			}
-		}
-	}
-
-	return compatibleOS(platform, goos) && compatibleCPUArchitecture(platform, goarch)
-}
-
-func compatibleOS(platform string, goos string) bool {
-	// TODO: Implement proper matching
-	switch goos {
-	case "darwin":
-		return strings.HasPrefix(platform, "macosx")
-	case "linux":
-		// https://www.python.org/dev/peps/pep-0513/
-		// https://www.python.org/dev/peps/pep-0571/
-		// https://www.python.org/dev/peps/pep-0599/
-		// matches manylinux1, manylinux2010, manylinux2014
-		// TODO: Implement platform detection to check for specific manylinux support
-		// Investigate if it should prefer the highest version?
-		return strings.HasPrefix(platform, "manylinux") || strings.HasPrefix(platform, "linux")
-	default:
-		fmt.Printf("unknown OS: %s\n", goos)
-		return false
-	}
-}
-
-func compatibleCPUArchitecture(platform, goarch string) bool {
-	switch goarch {
-	case "amd64":
-		return strings.HasSuffix(platform, "x86_64") || strings.HasSuffix(platform, "amd64")
-	case "i386":
-		return strings.HasSuffix(platform, "i686")
-	case "arm64":
-		return strings.HasSuffix(platform, "aarch64")
-	default:
-		return false
-	}
+	return min
 }
 
 // https://pythonwheels.com
-// TODO: Merge this and WheelFilename?
 type Wheel struct {
 	name     string // Canonical name
 	filename string
 	version  version.Version
 
-	// path is only set when the package has been made available on the filesystem.
-	path string
-	// url is only set when the package was found in a remote package repository.
-	url string
+	build string
+	tags  []string
 
-	dependencies []Dependency
+	// Path is only set when the package has been made available on the filesystem.
+	Path string
+	// URL is only set when the package was found in a remote package repository.
+	URL string
+
+	RequiresDist   []string
+	RequiresPython string
 }
 
 // Name returns the canonical name of the Wheel package.
@@ -184,8 +111,33 @@ func (p *Wheel) Version() version.Version {
 	return p.version
 }
 
+// TODO: Should take the environment as input
 func (p *Wheel) Dependencies() []Dependency {
-	return p.dependencies
+	var dependencies []Dependency
+
+	for _, row := range p.RequiresDist {
+		dep, err := version.ParseDependency(row)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", p.name, row, err)
+			continue
+		}
+		install, err := dep.Evaluate(env)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❗️ %s: %s(%v)\n", p.name, row, err)
+			continue
+		}
+		if !install {
+			continue
+		}
+
+		// fmt.Fprintf(os.Stderr, "🍀 %s: %s(minimal = %s)\n", name, row, version.Minimal(dep.Versions))
+		dependencies = append(dependencies, Dependency{
+			Name:    NormalizePackageName(dep.Name),
+			Version: version.Minimal(dep.Versions),
+		})
+	}
+
+	return dependencies
 }
 
 // Install unpacks the wheel and returns the path to the installaction location.
@@ -194,7 +146,7 @@ func (p *Wheel) Install(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	filename := filepath.Base(p.path)
+	filename := filepath.Base(p.Path)
 
 	// TODO: UserConfigDir?
 	installPath := filepath.Join("./ropedir", "0", strings.TrimSuffix(filename, ".whl"))
@@ -208,7 +160,7 @@ func (p *Wheel) Install(ctx context.Context) (string, error) {
 	fmt.Println("installing wheel:", filename)
 
 	// TODO: Verify files as they are being read
-	whlFile, err := zip.OpenReader(p.path)
+	whlFile, err := zip.OpenReader(p.Path)
 	if err != nil {
 		return "", err
 	}
@@ -250,22 +202,21 @@ func (p *Wheel) Install(ctx context.Context) (string, error) {
 		}
 	}
 
-	// TODO: Make this atomic in the event of concurrent installs?
 	return installPath, nil
 }
 
 // fetch downloads the package from the remote index.
 func (p *Wheel) fetch(ctx context.Context) error {
-	if p.path != "" {
+	if p.Path != "" {
 		// wheel already fetched
 		return nil
 	}
 
-	if p.url == "" {
+	if p.URL == "" {
 		panic("wheel download: missing url")
 	}
 	fmt.Printf("Downloading %s\n", p.filename)
-	parsedURL, err := url.Parse(p.url)
+	parsedURL, err := url.Parse(p.URL)
 	if err != nil {
 		return err
 	}
@@ -274,7 +225,7 @@ func (p *Wheel) fetch(ctx context.Context) error {
 		return err
 	}
 
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url, nil)
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, p.URL, nil)
 	if err != nil {
 		return err
 	}
@@ -326,7 +277,7 @@ func (p *Wheel) fetch(ctx context.Context) error {
 		return err
 	}
 
-	p.path = cachedPath
+	p.Path = cachedPath
 	return nil
 }
 
@@ -335,13 +286,12 @@ func (p *Wheel) extractDependencies(ctx context.Context) error {
 		return err
 	}
 
-	whlFile, err := zip.OpenReader(p.path)
+	whlFile, err := zip.OpenReader(p.Path)
 	if err != nil {
 		return err
 	}
 	defer whlFile.Close()
 
-	dependencies := []Dependency{}
 	var metadata *zip.File
 	for _, file := range whlFile.File {
 		// TODO: Verify contents of METADATA by also reading RECORD
@@ -359,44 +309,18 @@ func (p *Wheel) extractDependencies(ctx context.Context) error {
 	}
 	defer metadataFile.Close()
 
-	dependencies, err = p.extractDependenciesFromMetadata(metadataFile)
-	if err != nil {
-		return fmt.Errorf("extracting dependencies from METADATA: %w", err)
-	}
-
-	p.dependencies = dependencies
-	// Cache result in a newline delimited JSON file.
-	return nil
-}
-
-func (p *Wheel) extractDependenciesFromMetadata(metadata io.Reader) ([]Dependency, error) {
-	dependencies := []Dependency{}
-
-	scanner := bufio.NewScanner(metadata)
+	scanner := bufio.NewScanner(metadataFile)
 	for scanner.Scan() {
 		row := scanner.Text()
-		if strings.HasPrefix(row, "Requires-Dist: ") {
-			// Remove split as it is being handled by ParseDependencySpecification
-			dep, err := version.ParseDependencySpecification(strings.TrimPrefix(row, "Requires-Dist: "))
-			if err != nil {
-				// fmt.Printf("💀 %s(%v)\n", row, err)
-				continue
-			}
-			if len(dep.Extras) > 0 {
-				// fmt.Printf("💀 %s(extras)\n", row)
-				continue
-			}
-
-			// fmt.Printf("🍀 %s %s(minimal = %s)\n", p.name, row, version.Minimal(dep.Versions))
-			dependencies = append(dependencies, Dependency{
-				Name:    NormalizePackageName(dep.DistributionName),
-				Version: version.Minimal(dep.Versions),
-			})
+		// TODO: Extract requires-python
+		if strings.HasPrefix(row, "Requires-Dist:") {
+			row = strings.TrimSpace(strings.TrimPrefix(row, "Requires-Dist:"))
+			p.RequiresDist = append(p.RequiresDist, row)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return err
 	}
 
-	return dependencies, nil
+	return nil
 }

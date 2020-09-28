@@ -2,8 +2,6 @@ package version
 
 import (
 	"fmt"
-	"strings"
-	"text/scanner"
 	"unicode"
 )
 
@@ -121,141 +119,339 @@ Parsing is described in detail at: https://www.python.org/dev/peps/pep-0508/
 // specification. However, URLs are not allowed when specifying dependants.
 var ErrURLNotSupported = fmt.Errorf("url not supported")
 
-type DependencySpecification struct {
-	DistributionName string
-	Versions         []VersionRequirement
-	Extras           []string
-	// EnvironmentMarkers []string
+// Dependency is a parsed dependency specification.
+type Dependency struct {
+	Name     string
+	Versions []Requirement
+	Extras   []string
+
+	expr []Expr
 }
 
-func dependencyIdentifier(ch rune, i int) bool {
-	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || (ch == '-' || ch == '_' || ch == '.') && i > 0
-}
+// ParseDependency parses a dependency according to PEP 508.
+// Read more: https://www.python.org/dev/peps/pep-0508/
+func ParseDependency(input string) (*Dependency, error) {
+	p := &parser{s: input}
+	d := &Dependency{}
 
-func scanVersionSpec(s *scanner.Scanner) ([]VersionRequirement, error) {
-	parentheses := false
-	if s.Peek() == '(' {
-		parentheses = true
-		s.Next()
+	p.skipWhitespace()
+	name := p.expectFunc(identifier)
+	if name == "" {
+		return nil, fmt.Errorf("expected distribution name")
 	}
-	versions, err := scanVersionRequirements(s)
+	d.Name = name
+
+	p.skipWhitespace()
+	if p.peekRune() == '[' {
+		extras, err := extras(p)
+		if err != nil {
+			return nil, err
+		}
+		d.Extras = extras
+	}
+
+	p.skipWhitespace()
+	switch r := p.peekRune(); {
+	case r == '(':
+		p.next()
+
+		var err error
+		d.Versions, err = versionRequirements(p)
+		if err != nil {
+			return nil, err
+		}
+
+		if p.next() != ')' {
+			return nil, fmt.Errorf("expected closing parenthesis")
+		}
+	case p.peek(comparisonOps...):
+		var err error
+		d.Versions, err = versionRequirements(p)
+		if err != nil {
+			return nil, err
+		}
+	case r == '@':
+		return nil, ErrURLNotSupported
+	case r == eof:
+		return d, nil
+	}
+
+	p.skipWhitespace()
+	if r := p.peekRune(); r == ';' {
+		expr, err := environmentMarkers(p)
+		if err != nil {
+			return nil, err
+		}
+		d.expr = expr
+	}
+
+	p.skipWhitespace()
+	if r := p.peekRune(); r != eof {
+		return nil, fmt.Errorf("expected end of string, remaining: '%s'", p.s[p.pos:])
+	}
+
+	return d, nil
+}
+
+func ParseVersionRequirements(input string) ([]Requirement, error) {
+	p := &parser{s: input}
+
+	return versionRequirements(p)
+}
+
+func versionRequirement(p *parser) (Requirement, error) {
+	p.skipWhitespace()
+	op := p.expect(comparisonOps...)
+	if op == "" {
+		return Requirement{}, fmt.Errorf("expected version comparison operator")
+	}
+
+	p.skipWhitespace()
+	versionString := p.expectFunc(isVersion)
+	if versionString == "" {
+		return Requirement{}, fmt.Errorf("expected valid version after comparison operator")
+	}
+
+	version, valid := Parse(versionString)
+	if !valid {
+		return Requirement{}, fmt.Errorf("invalid version '%s'", versionString)
+	}
+
+	return Requirement{
+		Operator: op,
+		Version:  version,
+	}, nil
+}
+
+func versionRequirements(p *parser) ([]Requirement, error) {
+	vrs := make([]Requirement, 0)
+	for {
+		vr, err := versionRequirement(p)
+		if err != nil {
+			return nil, err
+		}
+		vrs = append(vrs, vr)
+
+		p.skipWhitespace()
+		if r := p.peekRune(); r == ',' {
+			p.next()
+		} else if p.peek(comparisonOps...) {
+			// Multiple version specifiers should be separated by comma but in
+			// some cases a new version comparison operators begins right away.
+			continue
+		} else {
+			return vrs, nil
+		}
+	}
+}
+
+func extras(p *parser) ([]string, error) {
+	p.next() // consume '['
+
+	extras := make([]string, 0)
+	for {
+		p.skipWhitespace()
+		extra := p.expectFunc(identifier)
+		if extra == "" {
+			return nil, fmt.Errorf("expected extras")
+		}
+		extras = append(extras, extra)
+
+		p.skipWhitespace()
+		if r := p.peekRune(); r == ']' {
+			p.next()
+			return extras, nil
+		} else if r == ',' {
+			p.next()
+		}
+	}
+}
+
+var envVars = []string{
+	"os_name",
+	"sys_platform",
+	"platform_machine",
+	"platform_python_implementation",
+	"platform_release",
+	"platform_system",
+	"platform_version",
+	"python_version",
+	"python_full_version",
+	"implementation_name",
+	"implementation_version",
+	"extra",
+}
+
+var comparisonOps = []string{
+	LessOrEqual,
+	Less,
+	Equal,
+	NotEqual,
+	GreaterOrEqual,
+	Greater,
+	CompatibleEqual,
+	TripleEqual,
+}
+
+type marker struct {
+	value string
+	env   bool
+}
+
+func environmentMarker(p *parser) (marker, error) {
+	p.skipWhitespace()
+	switch r := p.peekRune(); r {
+	case '"':
+		p.next()
+		v := p.expectFunc(func(r rune, _ int) bool {
+			return isPythonString(r) || r == '\''
+		})
+		if p.next() != '"' {
+			return marker{}, fmt.Errorf(`missing '"'`)
+		}
+
+		return marker{v, false}, nil
+	case '\'':
+		p.next()
+		v := p.expectFunc(func(r rune, _ int) bool {
+			return isPythonString(r) || r == '"'
+		})
+		if p.next() != '\'' {
+			return marker{}, fmt.Errorf(`missing "'"`)
+		}
+
+		return marker{v, false}, nil
+	default:
+		env := p.expect(envVars...)
+		if env == "" {
+			return marker{}, fmt.Errorf("unknown environment marker, remaining: '%s'", p.s[p.pos:])
+			// return marker{}, ErrUnknownEnvironmentMarker
+		}
+
+		return marker{env, true}, nil
+	}
+}
+
+func environmentMarkerExpression(p *parser) (Expr, error) {
+	p.skipWhitespace()
+	if r := p.peekRune(); r == '(' {
+		p.next()
+
+		e, err := environmentMarkersDisjunction(p, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		p.skipWhitespace()
+		if p.next() != ')' {
+			return nil, fmt.Errorf("expected closing parenthesis")
+		}
+
+		return e, nil
+	}
+
+	left, err := environmentMarker(p)
+	if err != nil {
+		return nil, fmt.Errorf("invalid left-hand environment marker: %v", err)
+	}
+
+	p.skipWhitespace()
+	op := p.expect(append(comparisonOps, "in", "not in")...)
+	if op == "" {
+		return nil, fmt.Errorf("invalid operator")
+	}
+
+	right, err := environmentMarker(p)
+	if err != nil {
+		return nil, fmt.Errorf("invalid right-hand environment marker: %v", err)
+	}
+
+	return &exprMarker{
+		op:    op,
+		left:  left,
+		right: right,
+	}, nil
+}
+
+// environmentMarkersDisjunction parses a series of conjunctions separated by 'and'.
+func environmentMarkersConjunction(p *parser, prev Expr) (Expr, error) {
+	term, err := environmentMarkerExpression(p)
 	if err != nil {
 		return nil, err
 	}
 
-	if parentheses && s.Next() != ')' {
-		return nil, fmt.Errorf("expected closing parenthesis after opening parenthesis in version spec")
+	if prev != nil {
+		term = exprAnd{
+			left:  prev,
+			right: term,
+		}
 	}
 
-	return versions, nil
+	p.skipWhitespace()
+	if p.expect("and") == "and" {
+		return environmentMarkersConjunction(p, term)
+	}
+
+	return term, nil
 }
 
-func scanExtras(s *scanner.Scanner) ([]string, error) {
-	s.Next()
+// environmentMarkersDisjunction parses a series of conjunctions separated by 'or'.
+// More than two terms are combined by nesting expressions.
+// Execution order is preserved as long as the expressions are evaluated in
+// depth-first order.
+func environmentMarkersDisjunction(p *parser, prev Expr) (Expr, error) {
+	term, err := environmentMarkersConjunction(p, nil)
+	if err != nil {
+		return nil, err
+	}
 
-	extras := make([]string, 0)
+	if prev != nil {
+		term = exprOr{
+			left:  prev,
+			right: term,
+		}
+	}
+
+	p.skipWhitespace()
+	if p.expect("or") == "or" {
+		return environmentMarkersDisjunction(p, term)
+	}
+
+	return term, nil
+}
+
+func environmentMarkers(p *parser) ([]Expr, error) {
+	e := make([]Expr, 0)
 	for {
-		skipWhitespace(s)
-		if s.Scan() == scanner.EOF {
-			return nil, fmt.Errorf("expected extras identifer, got EOF")
+		p.skipWhitespace()
+		if r := p.peekRune(); r == ';' {
+			p.next()
+		} else {
+			return e, nil
 		}
-		extras = append(extras, s.TokenText())
-		skipWhitespace(s)
 
-		if ch := s.Peek(); ch == ']' {
-			s.Next()
-			return extras, nil
-		} else if ch == ',' {
-			s.Next()
+		expr, err := environmentMarkersDisjunction(p, nil)
+		if err != nil {
+			return nil, err
 		}
+		e = append(e, expr)
 	}
 }
 
-var ErrUnknownEnvironmentMarker = fmt.Errorf("unknown environment marker")
-
-// TODO: Implement the full expression language supported and evaluate it.
-func scanEnvironmentMarkers(s *scanner.Scanner) ([]string, error) {
-	skipWhitespace(s)
-	s.IsIdentRune = func(ch rune, i int) bool {
-		return unicode.IsLetter(ch)
-	}
-
-	if s.Scan() == scanner.Ident && s.TokenText() == "extra" {
-		if s.TokenText() == "extra" {
-			skipWhitespace(s)
-			if s.Next() != '=' {
-				return nil, ErrUnknownEnvironmentMarker
-			}
-			if s.Next() != '=' {
-				return nil, ErrUnknownEnvironmentMarker
-			}
-			skipWhitespace(s)
-			if r := s.Next(); r != '"' && r != '\'' {
-				return nil, ErrUnknownEnvironmentMarker
-			}
-			if s.Scan() == scanner.Ident {
-				return []string{s.TokenText()}, nil
-			}
-		}
-	}
-
-	return nil, ErrUnknownEnvironmentMarker
+func identifier(r rune, i int) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || i > 0 && (r == '-' || r == '_' || r == '.')
 }
 
-// ParseDependencySpecification parse a dependency according to PEP 508.
-// Read more: https://www.python.org/dev/peps/pep-0508/
-// Split lexing and parsing to simplify the implementation.
-func ParseDependencySpecification(input string) (*DependencySpecification, error) {
-	d := &DependencySpecification{}
+func isPythonString(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsLetter(r) || unicode.IsDigit(r) ||
+		r == '(' || r == ')' || r == '.' || r == '{' || r == '}' ||
+		r == '-' || r == '_' || r == '*' || r == '#' || r == ':' ||
+		r == ';' || r == ',' || r == '/' || r == '?' || r == '[' ||
+		r == ']' || r == '!' || r == '~' || r == '`' || r == '@' ||
+		r == '$' || r == '%' || r == '^' || r == '&' || r == '=' ||
+		r == '+' || r == '|' || r == '<' || r == '>'
+}
 
-	s := &scanner.Scanner{}
-	s.Init(strings.NewReader(input))
-	s.Mode = scanner.ScanIdents
-	s.Whitespace = 1<<'\t' | 1<<' '
-
-	s.IsIdentRune = dependencyIdentifier
-	if s.Scan() == scanner.EOF {
-		return nil, fmt.Errorf("expected package identifer, got EOF")
-	}
-	d.DistributionName = s.TokenText()
-	skipWhitespace(s)
-
-	if s.Peek() == '[' {
-		var err error
-		d.Extras, err = scanExtras(s)
-		if err != nil {
-			return nil, err
-		}
-	}
-	skipWhitespace(s)
-
-	switch s.Peek() {
-	case '(', '<', '!', '=', '>', '~':
-		var err error
-		d.Versions, err = scanVersionSpec(s)
-		if err != nil {
-			return nil, err
-		}
-	case '@':
-		return nil, ErrURLNotSupported
-	case ';':
-		s.Next()
-		extras, err := scanEnvironmentMarkers(s)
-		if err != nil {
-			return nil, err
-		}
-		d.Extras = append(extras)
-	}
-
-	skipWhitespace(s)
-	if s.Peek() == ';' {
-		s.Next()
-		extras, err := scanEnvironmentMarkers(s)
-		if err != nil {
-			return nil, err
-		}
-		d.Extras = append(extras)
-	}
-
-	return d, nil
+func isVersion(ch rune, i int) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '*' || ch == '+' || ch == '!'
 }

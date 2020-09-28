@@ -3,7 +3,6 @@ package version
 import (
 	"compress/gzip"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -171,7 +170,7 @@ func TestVersionEquality(t *testing.T) {
 		{
 			v1:    "4.3+abc",
 			v2:    "4.3",
-			equal: true,
+			equal: false,
 		},
 		{
 			v1:    "1.3",
@@ -307,6 +306,22 @@ func TestParseAllVersions(t *testing.T) {
 		RequiresDist []string `json:"requires_dist"`
 	}
 
+	env := testEnvironment{
+		"extra": "",
+
+		"os_name":                        "",
+		"sys_platform":                   "",
+		"platform_machine":               "",
+		"platform_python_implementation": "",
+		"platform_release":               "0",
+		"platform_system":                "",
+		"platform_version":               "0",
+		"python_version":                 "0",
+		"python_full_version":            "0",
+		"implementation_name":            "",
+		"implementation_version":         "0",
+	}
+
 	failed := 0
 	failedDependencies := 0
 	total := 0
@@ -334,11 +349,15 @@ func TestParseAllVersions(t *testing.T) {
 		}
 
 		for _, requiresDist := range rec.RequiresDist {
-			_, err := ParseDependencySpecification(requiresDist)
+			ds, err := ParseDependency(requiresDist)
 			totalDependencies++
-			if err != nil && !errors.Is(err, ErrUnknownEnvironmentMarker) {
+			if err != nil {
 				failedDependencies++
-				// t.Errorf("%s-%s '%s' err: %v", rec.Name, rec.Version, requiresDist, err)
+				// t.Logf("%s-%s '%s' err: %v", rec.Name, rec.Version, requiresDist, err)
+			} else {
+				if _, err := ds.Evaluate(env); err != nil {
+					t.Errorf("evaluation failure: %s-%s '%s' err: %v", rec.Name, rec.Version, requiresDist, err)
+				}
 			}
 		}
 	}
@@ -355,7 +374,7 @@ func TestParseAllVersions(t *testing.T) {
 	}
 	failureDependenciesRate := float64(failedDependencies) / float64(totalDependencies)
 	t.Logf("Failed dependencies %d out of %d (%.4f%%)", failedDependencies, totalDependencies, failureDependenciesRate*100)
-	if failureDependenciesRate > 0.01 {
+	if failureDependenciesRate > 0.001 {
 		t.FailNow()
 	}
 }
@@ -420,6 +439,15 @@ func TestVersionComparison(t *testing.T) {
 		},
 		{
 			"0.5.0", "0.5", 0,
+		},
+		{
+			"1.11.0rc2", "1.11.0rc1", 1,
+		},
+		{
+			"1.11.dev4", "1.11.dev3", 1,
+		},
+		{
+			"0.22rc3", "0.22rc2.post1", 1,
 		},
 	}
 	for _, tc := range testCases {

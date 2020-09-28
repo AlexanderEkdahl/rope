@@ -84,9 +84,7 @@ func TestCLI(t *testing.T) {
 					expectedExitCode: 0,
 				},
 				{
-					// TODO: Figure out why a specific version of setuptools is required (used to not be the case).
-					// https://github.com/pypa/setuptools/issues/2353
-					args:             []string{"add", "tensorflow==2.2.0", "setuptools==49.6.0"},
+					args:             []string{"add", "tensorflow==2.2.0"},
 					expectedExitCode: 0,
 				},
 			},
@@ -136,9 +134,8 @@ func TestCLI(t *testing.T) {
 		// 	},
 		// 	verification: `import pendulum`,
 		// },
-		// markdown is distributed as 'Markdown'
-		// TODO: Figure out why 'importlib_metadata' is required
-		// Appears as if there is a condition requirement: importlib-metadata; python_version < "3.8"
+		// markdown is distributed as 'Markdown' and optionally requires importlib_metadata depending
+		// on Python version.
 		"markdown": {
 			steps: []step{
 				{
@@ -146,7 +143,7 @@ func TestCLI(t *testing.T) {
 					expectedExitCode: 0,
 				},
 				{
-					args:             []string{"add", "markdown", "importlib_metadata"},
+					args:             []string{"add", "markdown"},
 					expectedExitCode: 0,
 				},
 			},
